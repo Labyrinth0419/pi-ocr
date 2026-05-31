@@ -166,7 +166,7 @@ async function mineruProcessFile(
   onProgress(`${progressPrefix} uploading…`);
   const { task_id, file_url } = await apiPost(`${BASE_URL}/parse/file`, {
     file_name: fileName,
-    language: "en",
+    language: "ch",   // Chinese + English (default: ch_server for better handwriting/Japanese)
     enable_table: true,
     enable_formula: true,
     is_ocr: false,
