@@ -92,7 +92,7 @@ ollama list | grep glm-ocr
 
 ### 📐 Pix2Text setup
 
-Pix2Text runs entirely in Python. It converts PDF pages to images via `pypdfium2` (pure Python, no system tools needed).
+Pix2Text runs entirely in Python. Handles images and PDFs via a single API call — no manual conversion needed.
 
 #### Step 1: Make sure you have Python 3.9+ (macOS/Linux)
 
@@ -103,23 +103,21 @@ Pix2Text runs entirely in Python. It converts PDF pages to images via `pypdfium2
 > ⚠️ **Important:** Know which Python you're using. Run `which python3` — if it shows `conda`, `brew`, or `/usr/bin/python3`, your `pip install` must target the same Python:
 > ```bash
 > # Conda Python
-> pip install pix2text paddlepaddle pypdfium2
+> pip install pix2text
 > 
 > # System Python (may need --user or sudo)
-> pip install --user pix2text paddlepaddle pypdfium2
+> pip install --user pix2text
 > 
 > # Brew Python (macOS)
-> /opt/homebrew/bin/pip3 install pix2text paddlepaddle pypdfium2
+> /opt/homebrew/bin/pip3 install pix2text
 > ```
 > If unsure, use `python3 -m pip install ...` — this always installs for the active `python3`.
 
 #### Step 2: Install packages
 
 ```bash
-python3 -m pip install pix2text paddlepaddle pypdfium2
+python3 -m pip install pix2text
 ```
-
-> **macOS with Apple Silicon (M1/M2/M3):** PaddlePaddle does not provide native arm64 wheels. It installs x86_64 binaries which run fine under Rosetta 2 — no extra steps needed.
 
 #### Step 3: Verify
 
@@ -127,14 +125,10 @@ python3 -m pip install pix2text paddlepaddle pypdfium2
 python3 -c "from pix2text import Pix2Text; print('OK')"
 ```
 
-> First run downloads model weights (~100MB) to `~/.paddlex/`.
+> First run downloads ONNX models (~50MB) to `~/.pix2text/`.
 
-#### Optional: GPU acceleration (Linux)
+> First run downloads ONNX models (~50MB) to `~/.pix2text/`.
 
-```bash
-# NVIDIA GPU
-pip install paddlepaddle-gpu
-```
 
 ---
 
@@ -260,7 +254,7 @@ When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically
 |---|---|---|
 | **Ollama** | `sips` (macOS page 1) / `pdftoppm` (multi-page, Linux) | `poppler` (multi-page only) |
 | **MinerU** | Direct PDF upload — no conversion | None |
-| **Pix2Text** | `pypdfium2` (Python) — no system deps | None |
+| **Pix2Text** | Built-in `recognize_pdf()` — no system deps | None |
 
 ---
 
@@ -310,10 +304,10 @@ ollama pull glm-ocr
 which python3 && python3 --version
 
 # If using conda:
-conda activate base && pip install pix2text paddlepaddle pypdfium2
+conda activate base && pip install pix2text
 
 # If using system python:
-python3 -m pip install --user pix2text paddlepaddle pypdfium2
+python3 -m pip install --user pix2text
 ```
 
 ### Pix2Text: "No module named 'pix2text'"
@@ -321,8 +315,8 @@ python3 -m pip install --user pix2text paddlepaddle pypdfium2
 You likely installed with a different `pip` than your active `python3`:
 
 ```bash
-# Always use -m pip to ensure correct target:
-python3 -m pip install pix2text paddlepaddle pypdfium2
+python3 -m pip install pix2text
+```
 ```
 
 ### MinerU: "429 Too Many Requests"
