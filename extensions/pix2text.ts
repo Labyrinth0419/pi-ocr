@@ -46,8 +46,15 @@ def progress(payload):
 
 progress({"status": "loading", "message": "Initializing Pix2Text models..."})
 
-from pix2text import Pix2Text
-p2t = Pix2Text.from_config(enable_formula=True, enable_table=False)
+# Suppress model-loading noise on stdout during initialization
+_real_stdout = sys.stdout
+sys.stdout = sys.stderr
+
+try:
+    from pix2text import Pix2Text
+    p2t = Pix2Text.from_config(enable_formula=True, enable_table=False)
+finally:
+    sys.stdout = _real_stdout
 
 if ext == ".pdf":
     import fitz  # PyMuPDF — already a pix2text dependency
