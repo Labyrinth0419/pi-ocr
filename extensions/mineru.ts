@@ -1,5 +1,5 @@
 /**
- * pi-minimodel-ocr — MinerU API backend
+ * pi-ocr — MinerU API backend
  *
  * Uses the free Agent Lightweight API (no token required):
  *   - File ≤10MB, ≤20 pages → one free request

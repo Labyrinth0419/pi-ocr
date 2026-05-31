@@ -1,7 +1,7 @@
 /**
- * pi-minimodel-ocr — Multi-backend OCR for Pi Coding Agent
+ * pi-ocr — Multi-backend OCR for Pi Coding Agent
  *
- * Registers a `minimodel_ocr` tool that the LLM can call to read images and PDFs
+ * Registers a `pi_ocr` tool that the LLM can call to read images and PDFs
  * using one of three backends:
  *   - Ollama (local vision models like glm-ocr)
  *   - MinerU API (free Agent API, ≤10MB, ≤20 pages)
@@ -19,7 +19,7 @@
  *   Pix2Text:  pip install pix2text
  *   PDF tools:  brew install poppler (macOS multi-page PDF for Ollama)
  *
- * Install: pi install npm:pi-minimodel-ocr
+ * Install: pi install npm:pi-ocr
  */
 
 import { Type } from "@earendil-works/pi-ai";
@@ -111,7 +111,7 @@ const ocrSchema = Type.Object({
 });
 
 const ocrTool = defineTool({
-  name: "minimodel_ocr",
+  name: "pi_ocr",
   label: "Minimodel OCR",
   description:
     "Extract text, math formulas (LaTeX), and tables from images or PDFs using local Ollama vision models. " +
@@ -120,9 +120,9 @@ const ocrTool = defineTool({
   promptSnippet:
     "Extract text/formulas/tables from images and PDFs using local Ollama OCR",
   promptGuidelines: [
-    "When the user asks about the content of an image or PDF, use minimodel_ocr to extract the text first.",
-    "For mathematical documents, use minimodel_ocr with task='formula' or task='auto' to get LaTeX output.",
-    "Use minimodel_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
+    "When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
+    "For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
+    "Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
   ],
   parameters: ocrSchema,
   async execute(_toolCallId, params, signal, onUpdate, _ctx) {
@@ -408,7 +408,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
     const text = config.backend === "ollama"
       ? `OCR: ollama ${config.model}`
       : `OCR: ${config.backend}`;
-    ctx.ui.setStatus("minimodel-ocr", text);
+    ctx.ui.setStatus("pi-ocr", text);
   }
 
   // ── Startup ────────────────────────────────────────────────────────────────
@@ -430,5 +430,5 @@ export default function ocrExtension(pi: ExtensionAPI) {
     }
   });
 
-  console.log("[pi-ocr] Loaded — /ocr (file or settings), tool: minimodel_ocr, default: mineru");
+  console.log("[pi-ocr] Loaded — /ocr (file or settings), tool: pi_ocr, default: mineru");
 }

@@ -1,5 +1,5 @@
 /**
- * pi-minimodel-ocr — Pix2Text backend
+ * pi-ocr — Pix2Text backend
  *
  * Uses Pix2Text (https://github.com/breezedeus/Pix2Text) — an open-source
  * Python alternative to Mathpix. Recognizes layouts, text, math formulas (LaTeX),

@@ -1,5 +1,5 @@
 /**
- * pi-minimodel-ocr — shared types for OCR backends
+ * pi-ocr — shared types for OCR backends
  */
 
 export const TASKS = ["text", "formula", "table", "figure", "auto"] as const;

@@ -1,5 +1,5 @@
 /**
- * pi-minimodel-ocr — Ollama backend
+ * pi-ocr — Ollama backend
  *
  * Uses any locally-running Ollama vision model (default: glm-ocr) to OCR
  * images and PDFs. Converts PDF pages to PNG before sending to Ollama.

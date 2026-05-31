@@ -7,7 +7,7 @@
 
 Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX math formulas, and tables from images and PDFs. Choose the backend that fits your needs: free cloud API, local GPU, or pure Python.
 
-> Bridges the multimodal gap for non-vision LLMs like **DeepSeek**. When your model can't see images, `minimodel_ocr` acts as its eyes.
+> Bridges the multimodal gap for non-vision LLMs like **DeepSeek**. When your model can't see images, `pi_ocr` acts as its eyes.
 
 ## Three Backends — One Tool
 
@@ -158,6 +158,9 @@ Free tier limits:
 - ≤ 20 pages per request
 - IP-based rate limiting
 
+> 💡 PDFs >20 pages: auto-splitting needs `python3` + `pypdfium2` (`pip install pypdfium2`).
+> Most PDFs are under 20 pages — you'll likely never need this.
+
 For files >10MB, compress first at [ilovepdf.com/compress_pdf](https://ilovepdf.com/compress_pdf).
 
 ---
@@ -210,7 +213,7 @@ Opens an interactive `SettingsList` with keyboard navigation:
 
 ### LLM-invoked (automatic)
 
-The extension registers a `minimodel_ocr` tool. The agent invokes it automatically:
+The extension registers a `pi_ocr` tool. The agent invokes it automatically:
 
 ```
 > What formula is written in this screenshot?
@@ -371,7 +374,7 @@ sudo pacman -S poppler
 
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────────┐
-│  pi (DeepSeek)   │────▶│  minimodel_ocr   │────▶│  Ollama / MinerU    │
+│  pi (DeepSeek)   │────▶│  pi_ocr   │────▶│  Ollama / MinerU    │
 │  (no vision)     │     │  pi extension    │     │  / Pix2Text        │
 └──────────────────┘     └──────────────────┘     └──────────────────────┘
         │                         │                           │
