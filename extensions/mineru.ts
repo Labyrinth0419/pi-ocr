@@ -186,6 +186,19 @@ async function mineruProcessFile(
   return markdown;
 }
 
+// ── Image → PDF wrapper (so MinerU applies language=\"ch\" pipeline) ──────────
+
+const IMG2PDF_SCRIPT = `
+import sys
+from PIL import Image
+img = Image.open(sys.argv[1])
+img.save(sys.argv[2], "PDF")
+`;
+
+async function wrapImageAsPdf(imagePath: string, pdfPath: string): Promise<void> {
+  await execPy(IMG2PDF_SCRIPT, [imagePath, pdfPath]);
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function mineruOcr(
@@ -195,13 +208,23 @@ export async function mineruOcr(
   const ext = extname(filePath).toLowerCase();
   const fileName = basename(filePath);
 
-  // For images (non-PDF): process as a single individual request
+  // For images (non-PDF): wrap in PDF so MinerU applies language=\"ch\" pipeline
   if (ext !== ".pdf") {
     if (![".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"].includes(ext)) {
       throw new Error(`MinerU does not support this file type: ${ext}. Use PDF, PNG, JPG, Docx, PPTx, or Xlsx.`);
     }
-    const markdown = await mineruProcessFile(filePath, fileName, "[1/1]", onProgress);
-    return { text: markdown, details: { backend: "mineru", fileName, pages: 1 } };
+
+    // Wrap image as 1-page PDF so language/chinese OCR works
+    onProgress("[1/1] converting image to PDF…");
+    const pdfPath = join(tmpdir(), `pi-mineru-img-${Date.now()}.pdf`);
+    try {
+      await wrapImageAsPdf(filePath, pdfPath);
+      const pdfName = fileName.replace(/\.[^.]+$/, "") + ".pdf";
+      const markdown = await mineruProcessFile(pdfPath, pdfName, "[1/1]", onProgress);
+      return { text: markdown, details: { backend: "mineru", fileName, pages: 1 } };
+    } finally {
+      try { unlinkSync(pdfPath); } catch { /* cleanup */ }
+    }
   }
 
   // ── PDF handling ──
