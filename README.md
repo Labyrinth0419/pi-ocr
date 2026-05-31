@@ -33,6 +33,8 @@ Switch anytime with `/ocr` (no args).
 | 🔤 | Tesseract | Plain text (~30MB) | `brew install tesseract` |
 | 📐 | Pix2Text | Math + text, GPU/CPU | `pip install pix2text` |
 
+> 💡 Unsure which backend to pick? See the [benchmark](pi-ocr-benchmark.md) with real test results and the ground truth for comparison.
+
 ---
 
 ## MinerU (default)
