@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, existsSync, mkdtempSync, readdirSync, unlinkSync, rmdirSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import type { Task, OcrResult, OcrProgressCallback } from "./types";

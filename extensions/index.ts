@@ -43,7 +43,7 @@ import { homedir } from "node:os";
 
 import type { Backend, Task, OcrConfig } from "./types";
 import { TASKS, BACKENDS } from "./types";
-import { isImage, isPdf, getPdfPageCount, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./ollama";
+import { isImage, isPdf, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./ollama";
 import { mineruOcr } from "./mineru";
 import { tesseractOcr } from "./tesseract";
 import { pix2textOcr } from "./pix2text";
@@ -55,7 +55,16 @@ const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
 function loadOcrConfig(): Partial<OcrConfig> {
   try {
     if (!existsSync(SETTINGS_PATH)) return {};
-    return (JSON.parse(readFileSync(SETTINGS_PATH, "utf8")) as any).minimodelOcr || {};
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+    // Migrate from old key (pi-minimodel-ocr) to new key (pi-ocr)
+    const old = (settings as any).minimodelOcr;
+    const current = (settings as any).piOcr;
+    if (old && !current) {
+      (settings as any).piOcr = old;
+      delete (settings as any).minimodelOcr;
+      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
+    }
+    return (settings as any).piOcr || {};
   } catch { return {}; }
 }
 
@@ -66,7 +75,7 @@ function saveOcrConfig(updates: Partial<OcrConfig>) {
     const settings = existsSync(SETTINGS_PATH)
       ? JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))
       : {};
-    settings.minimodelOcr = { ...(settings.minimodelOcr || {}), ...updates };
+    settings.piOcr = { ...(settings.piOcr || {}), ...updates };
     writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
   } catch { /* best effort */ }
 }
