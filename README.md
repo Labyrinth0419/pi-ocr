@@ -1,8 +1,13 @@
 # pi-minimodel-ocr
 
-Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX math formulas, and tables from images and PDFs. Choose the backend that fits your needs: local GPU, free cloud API, or pure Python.
+> ### ⚡ Zero setup. Works out of the box.
+>
+> Default backend: **MinerU** — a free cloud API. No install, no GPU, no API key.
+> Just `pi install npm:pi-minimodel-ocr` and OCR anything.
 
-> Bridges the multimodal gap for non-vision LLMs like **DeepSeek**. When your model can't see images, `minimodel_ocr` acts as its eyes — with state-of-the-art formula recognition outputting LaTeX.
+Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX math formulas, and tables from images and PDFs. Choose the backend that fits your needs: free cloud API, local GPU, or pure Python.
+
+> Bridges the multimodal gap for non-vision LLMs like **DeepSeek**. When your model can't see images, `minimodel_ocr` acts as its eyes.
 
 ## Three Backends — One Tool
 
@@ -36,15 +41,27 @@ Switch anytime with `/ocr` (no args) — a visual `SettingsList` menu lets you p
 
 ## Quickstart
 
-### 1. Install the extension
+### One command
 
 ```bash
 pi install npm:pi-minimodel-ocr
 ```
 
-### 2. Choose and set up your backend
+**That's it.** The default backend is ☁️ **MinerU** — a free cloud API with zero setup.
+Start OCR'ing immediately:
 
-Run `/ocr` in pi (no arguments) to open the settings menu. Pick a backend. Follow the platform-specific setup below for your choice:
+```
+/ocr ./scan.png
+/ocr ./document.pdf
+```
+
+> 💡 Want offline OCR or math formulas? Switch backends anytime with `/ocr` (no args).
+
+---
+
+### Optional: set up other backends
+
+Only needed if you want to switch from the default MinerU.
 
 ---
 
@@ -132,9 +149,9 @@ python3 -c "from pix2text import Pix2Text; print('OK')"
 
 ---
 
-### ☁️ MinerU setup
+### ☁️ MinerU (default — already working!)
 
-**No setup required.** The free Agent API works immediately. No token, no account.
+**No setup required.** The free Agent API works immediately. No token, no account, no install.
 
 Free tier limits:
 - ≤ 10 MB per file
@@ -204,19 +221,17 @@ The extension registers a `minimodel_ocr` tool. The agent invokes it automatical
 
 ## MinerU PDF Splitting
 
-When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically split into ≤20-page chunks. Each chunk is submitted as a **separate individual request** (not batch) with 3-second spacing to respect the per-minute IP rate limit:
+When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically split into ≤20-page chunks. Each chunk is a separate request with 3s spacing:
 
 ```
-📦 PDF has 85 pages — splitting into ≤20-page chunks…
-🔪 Splitting PDF with pypdfium2…
-📦 Split into 5 chunk(s). Each will be a SEPARATE MinerU request:
-
-── Request 1/5 (pages 1-20) ──
-📤 MinerU: requesting upload URL for doc_p1-20.pdf…
-✅ MinerU: pages 1-20 complete
-
-── Request 2/5 (pages 21-40) ──
-  ⏸️  Waiting 3s for rate limit…
+Splitting 85-page PDF into ≤20-page chunks…
+[1/5] uploading…
+[1/5] running (12s)
+[1/5] done
+[2/5] waiting rate limit…
+[2/5] uploading…
+[2/5] running (18s)
+[2/5] done
 ...
 ```
 

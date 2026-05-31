@@ -115,7 +115,7 @@ async function putFile(uploadUrl: string, filePath: string): Promise<void> {
   }
 }
 
-async function pollTask(taskId: string, timeoutMs: number, onProgress: OcrProgressCallback): Promise<string> {
+async function pollTask(taskId: string, timeoutMs: number, progressPrefix: string, onProgress: OcrProgressCallback): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const resp = await fetch(`${BASE_URL}/parse/${taskId}`, {
@@ -141,7 +141,7 @@ async function pollTask(taskId: string, timeoutMs: number, onProgress: OcrProgre
     }
 
     const elapsed = Math.floor((Date.now() - start) / 1000);
-    onProgress(`⏳ MinerU: ${state} (${elapsed}s)…`);
+    onProgress(`${progressPrefix} ${state} (${elapsed}s)`);
     await new Promise((r) => setTimeout(r, 3000));
   }
   throw new Error(`MinerU task ${taskId} timed out after ${timeoutMs / 1000}s`);
@@ -150,7 +150,7 @@ async function pollTask(taskId: string, timeoutMs: number, onProgress: OcrProgre
 // ── Single-file processing (one individual request, NOT batch) ───────────────
 
 async function mineruProcessFile(
-  filePath: string, fileName: string, pageLabel: string,
+  filePath: string, fileName: string, progressPrefix: string,
   onProgress: OcrProgressCallback,
 ): Promise<string> {
   const stats = await stat(filePath);
@@ -163,7 +163,7 @@ async function mineruProcessFile(
   }
 
   // Step 1: Get signed upload URL
-  onProgress(`📤 MinerU: requesting upload URL for ${fileName}…`);
+  onProgress(`${progressPrefix} uploading…`);
   const { task_id, file_url } = await apiPost(`${BASE_URL}/parse/file`, {
     file_name: fileName,
     language: "en",
@@ -177,13 +177,12 @@ async function mineruProcessFile(
   }
 
   // Step 2: Upload file bytes
-  onProgress(`📤 MinerU: uploading ${fileName} (${sizeMB.toFixed(1)}MB)…`);
   await putFile(file_url, filePath);
 
   // Step 3 + 4: Poll for result and download markdown
-  onProgress(`⏳ MinerU: waiting for ${pageLabel}…`);
-  const markdown = await pollTask(task_id, 300_000, (msg) => onProgress(`  ${msg}`));
-  onProgress(`✅ MinerU: ${pageLabel} complete`);
+  onProgress(`${progressPrefix} pending…`);
+  const markdown = await pollTask(task_id, 300_000, progressPrefix, onProgress);
+  onProgress(`${progressPrefix} done`);
   return markdown;
 }
 
@@ -201,8 +200,7 @@ export async function mineruOcr(
     if (![".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"].includes(ext)) {
       throw new Error(`MinerU does not support this file type: ${ext}. Use PDF, PNG, JPG, Docx, PPTx, or Xlsx.`);
     }
-    onProgress(`📤 MinerU: submitting ${fileName} (image)…`);
-    const markdown = await mineruProcessFile(filePath, fileName, "1 page", onProgress);
+    const markdown = await mineruProcessFile(filePath, fileName, "[1/1]", onProgress);
     return { text: markdown, details: { backend: "mineru", fileName, pages: 1 } };
   }
 
@@ -216,67 +214,55 @@ export async function mineruOcr(
   if (totalMB > 10) {
     onProgress(
       `⚠️ PDF is ${totalMB.toFixed(1)}MB — MinerU free tier limit is 10MB.\n` +
-      `💡 Compress at https://ilovepdf.com/compress_pdf first, or switch to a local backend with /ocr.`
+      `💡 Compress at https://ilovepdf.com/compress_pdf first, or switch backend with /ocr.`
     );
   }
 
   // Single chunk case: one individual request
   if (pageCount <= 20) {
-    const markdown = await mineruProcessFile(filePath, fileName, `${pageCount} page(s)`, onProgress);
+    const markdown = await mineruProcessFile(filePath, fileName, "[1/1]", onProgress);
     return { text: markdown, details: { backend: "mineru", fileName, pages: pageCount } };
   }
 
   // ── Multi-chunk: split PDF and process each chunk as SEPARATE requests ──
   if (!splitPdf) {
     onProgress(
-      `⚠️ PDF has ${pageCount} pages but PDF splitting is disabled.\n` +
-      `MinerU free tier only accepts ≤20 pages. Enable splitting with /ocr settings.`
+      `⚠️ PDF has ${pageCount} pages but splitting is disabled.\n` +
+      `Enable in /ocr settings → "MinerU: Split PDF >20 pages: ON"`
     );
     try {
-      const markdown = await mineruProcessFile(filePath, fileName, `${pageCount} pages`, onProgress);
+      const markdown = await mineruProcessFile(filePath, fileName, "[1/1]", onProgress);
       return { text: markdown, details: { backend: "mineru", fileName, pages: pageCount } };
     } catch (e: any) {
       throw new Error(
-        `${e.message}\n\n💡 Enable PDF splitting in /ocr settings → "MinerU: Split PDF >20 pages: ON"`
+        `${e.message}\n\n💡 Enable PDF splitting in /ocr settings.`
       );
     }
   }
 
-  onProgress(`📦 PDF has ${pageCount} pages — splitting into ≤20-page chunks…`);
+  onProgress(`Splitting ${pageCount}-page PDF into ≤20-page chunks…`);
 
   const splitDir = mkdtempSync(join(tmpdir(), "pi-mineru-split-"));
   try {
-    onProgress(`🔪 Splitting PDF with pypdfium2…`);
     const raw = await execPy(PDF_SPLIT_SCRIPT, [filePath, "20", splitDir]);
     const { chunks } = JSON.parse(raw) as {
       total: number;
       chunks: Array<{ path: string; firstPage: number; lastPage: number }>;
     };
 
-    onProgress(`📦 Split into ${chunks.length} chunk(s). Each will be a SEPARATE MinerU request:`);
-
     const results: string[] = [];
     for (let i = 0; i < chunks.length; i++) {
       if (signal?.aborted) throw new Error("Aborted");
       const chunk = chunks[i];
+      const prefix = `[${i + 1}/${chunks.length}]`;
 
-      onProgress(`\n── Request ${i + 1}/${chunks.length} (pages ${chunk.firstPage}-${chunk.lastPage}) ──`);
-
-      // Respect MinerU IP rate limiting (per-minute submission limit).
-      // Each chunk's processing (upload+poll+download) naturally takes 30-60s,
-      // so 3s spacing is sufficient. MinerU's own examples use 3s polling.
       if (i > 0) {
-        onProgress("  ⏸️  Waiting 3s for rate limit…");
+        onProgress(`${prefix} waiting rate limit…`);
         await new Promise((r) => setTimeout(r, 3_000));
       }
 
       const chunkName = `${fileName.replace(/\.pdf$/i, "")}_p${chunk.firstPage}-${chunk.lastPage}.pdf`;
-      // Each chunk is submitted as its own individual POST/upload/poll cycle
-      const markdown = await mineruProcessFile(
-        chunk.path, chunkName,
-        `pages ${chunk.firstPage}-${chunk.lastPage}`,
-        onProgress,
-      );
+      const markdown = await mineruProcessFile(chunk.path, chunkName, prefix, onProgress);
       results.push(`## Pages ${chunk.firstPage}-${chunk.lastPage}\n\n${markdown}`);
     }
 

@@ -73,7 +73,7 @@ function saveOcrConfig(updates: Partial<OcrConfig>) {
 function getConfig(): OcrConfig {
   const s = loadOcrConfig();
   return {
-    backend: (BACKENDS.includes(s.backend as Backend) ? s.backend : "ollama") as Backend,
+    backend: (BACKENDS.includes(s.backend as Backend) ? s.backend : "mineru") as Backend,
     ollamaHost: process.env.OLLAMA_HOST || s.ollamaHost || "http://localhost:11434",
     model: process.env.OCR_MODEL || s.model || "glm-ocr",
     mineruSplitPdf: s.mineruSplitPdf !== false,
