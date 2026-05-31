@@ -2,395 +2,110 @@
 
 > ### ⚡ Zero setup. Works out of the box.
 >
-> Default backend: **MinerU** — a free cloud API. No install, no GPU, no API key.
-> Just `pi install npm:pi-ocr` and OCR anything.
+> Default backend is **MinerU** — a free cloud API.
+> No GPU, no API key, no pip install. Just `pi install` and `/ocr`.
 
-Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX math formulas, and tables from images and PDFs. Choose the backend that fits your needs: free cloud API, local GPU, or pure Python.
-
-> Bridges the multimodal gap for non-vision LLMs like **DeepSeek**. When your model can't see images, `pi_ocr` acts as its eyes.
-
-## Three Backends — One Tool
-
-| Backend | Type | Best For |
-|---|---|---|
-| 🦙 **Ollama** | Local GPU | Math formulas (LaTeX), privacy, offline |
-| ☁️ **MinerU** | Free cloud API | Complex PDFs, no GPU, zero setup |
-| 📐 **Pix2Text** | Local Python | Math formulas + text, free Mathpix alternative |
-
-Switch anytime with `/ocr` (no args) — a visual `SettingsList` menu lets you pick and configure everything without editing JSON:
-
-```
-/ocr     → opens settings: backend, model, PDF split toggle
-/ocr <file> [task]   → OCR a file
-```
-
-## Features
-
-| | |
-|---|---|
-| 🔤 **Text** | General text recognition → Markdown |
-| 🧮 **Formulas** | Math formulas → LaTeX (Ollama glm-ocr: 94.6 OmniDocBench) |
-| 📊 **Tables** | Table structure → Markdown tables |
-| 🖼️ **Figures** | Diagrams and illustrations → descriptions |
-| 📄 **PDF** | Full PDF support across all backends |
-| 🎛️ **Any model** | Ollama works with glm-ocr, llama3.2-vision, minicpm-v, etc. |
-| ☁️ **Free cloud** | MinerU Agent API: no token, ≤10MB, ≤20 pages free |
-| 📦 **Auto-split** | MinerU splits PDFs >20 pages into free-tier chunks |
+OCR for [Pi Coding Agent](https://pi.dev). Bridges the multimodal gap for non-vision LLMs like DeepSeek: when your model can't see images, `pi_ocr` reads them for you.
 
 ---
 
 ## Quickstart
 
-### One command
-
 ```bash
 pi install npm:pi-ocr
+/ocr ./screenshot.png
+/ocr ./paper.pdf
 ```
 
-**That's it.** The default backend is ☁️ **MinerU** — a free cloud API with zero setup.
-Start OCR'ing immediately:
-
-```
-/ocr ./scan.png
-/ocr ./document.pdf
-```
-
-> 💡 Want offline OCR or math formulas? Switch backends anytime with `/ocr` (no args).
+**That's all.** MinerU (free cloud API) is the default and requires nothing.
 
 ---
 
-### Optional: set up other backends
+## Backends
 
-Only needed if you want to switch from the default MinerU.
+Switch anytime with `/ocr` (no args).
+
+| | Backend | Best for | Setup |
+|---|---|---|---|
+| ☁️ | **MinerU** (default) | PDFs, tables, general docs | None — works instantly |
+| 🦙 | Ollama | Math formulas → LaTeX, offline | `brew install ollama && ollama pull glm-ocr` |
+| 📐 | Pix2Text | Math + text, CPU-only | `pip install pix2text` |
 
 ---
 
-### 🦙 Ollama setup
+## MinerU (default)
 
-#### macOS
+Free cloud API. Handles PDF, PNG, JPG, Docx, PPTx, Xlsx.
+
+**Limits:** ≤10MB per file, ≤20 pages per request.
+
+PDFs >20 pages can be auto-split (enabled by default in `/ocr` settings). Splitting needs `pip install pypdfium2`.
+
+---
+
+## Ollama (optional, for math formulas)
+
+Local GPU OCR via [glm-ocr](https://ollama.com) — state-of-the-art formula recognition (94.6 OmniDocBench). Outputs LaTeX.
 
 ```bash
-# 1. Install Ollama
+# macOS
 brew install ollama
-
-# 2. Pull the default OCR model (~2.2 GB)
 ollama pull glm-ocr
+brew install poppler   # multi-page PDFs only
 
-# 3. Multi-page PDF support (optional but recommended)
-brew install poppler
-```
-
-> macOS uses built-in `sips` for single-page PDFs — zero extra deps for those.  
-> Multi-page PDFs need `poppler` for the `pdftoppm` tool.
-
-#### Linux
-
-```bash
-# 1. Install Ollama
+# Linux
 curl -fsSL https://ollama.com/install.sh | sh
-
-# 2. Pull the default OCR model (~2.2 GB)
 ollama pull glm-ocr
-
-# 3. PDF support (required on Linux)
-sudo apt install poppler-utils        # Debian/Ubuntu
-sudo dnf install poppler-utils        # Fedora
-sudo pacman -S poppler                # Arch
+sudo apt install poppler-utils
 ```
 
-#### Verify
-
-```bash
-# Check Ollama is running and model is pulled
-ollama list | grep glm-ocr
-```
+Switch with `/ocr` → "OCR Backend" → ollama.
 
 ---
 
-### 📐 Pix2Text setup
+## Pix2Text (optional, for offline CPU)
 
-Pix2Text runs entirely in Python. Handles images and PDFs via a single API call — no manual conversion needed.
+Local Python OCR. Mathpix alternative — handles text + formulas on CPU.
 
-#### Step 1: Make sure you have Python 3.9+ (macOS/Linux)
+```bash
+pip install pix2text
+```
 
-| System | Check |
+First run downloads ONNX models (~50MB). Switch with `/ocr` → "OCR Backend" → pix2text.
+
+---
+
+## Commands
+
+| Command | |
 |---|---|
-| macOS/Linux | `python3 --version` |
-
-> ⚠️ **Important:** Know which Python you're using. Run `which python3` — if it shows `conda`, `brew`, or `/usr/bin/python3`, your `pip install` must target the same Python:
-> ```bash
-> # Conda Python
-> pip install pix2text
-> 
-> # System Python (may need --user or sudo)
-> pip install --user pix2text
-> 
-> # Brew Python (macOS)
-> /opt/homebrew/bin/pip3 install pix2text
-> ```
-> If unsure, use `python3 -m pip install ...` — this always installs for the active `python3`.
-
-#### Step 2: Install packages
-
-```bash
-python3 -m pip install pix2text
-```
-
-#### Step 3: Verify
-
-```bash
-python3 -c "from pix2text import Pix2Text; print('OK')"
-```
-
-> First run downloads ONNX models (~50MB) to `~/.pix2text/`.
-
-> First run downloads ONNX models (~50MB) to `~/.pix2text/`.
-
-
----
-
-### ☁️ MinerU (default — already working!)
-
-**No setup required.** The free Agent API works immediately. No token, no account, no install.
-
-Free tier limits:
-- ≤ 10 MB per file
-- ≤ 20 pages per request
-- IP-based rate limiting
-
-> 💡 PDFs >20 pages: auto-splitting needs `python3` + `pypdfium2` (`pip install pypdfium2`).
-> Most PDFs are under 20 pages — you'll likely never need this.
-
-For files >10MB, compress first at [ilovepdf.com/compress_pdf](https://ilovepdf.com/compress_pdf).
-
----
-
-## Usage
-
-### Settings UI
-
-```
-/ocr
-```
-
-Opens an interactive `SettingsList` with keyboard navigation:
-
-```
-┌─ OCR Settings ─────────────────────────────────┐
-│  OCR Backend         [ollama / mineru / pix2text]  │
-│  MinerU: Split PDF   [ON / OFF]                     │
-│  Ollama Model         [glm-ocr]                     │
-│  ↑↓ navigate • ← → toggle • enter select • esc close    │
-└──────────────────────────────────────────────────┘
-```
-
-- **Backend**: ← → to cycle ollama/mineru/pix2text — saves immediately
-- **MinerU Split**: ← → to toggle ON/OFF — when ON, PDFs >20 pages are auto-split
-- **Model**: Enter opens a sub-menu with recommended models + custom input
-
-### OCR a file
-
-```
-/ocr <file> [task] [model]
-```
-
-| Example | Result |
-|---|---|
-| `/ocr ./scan.png` | Auto-detect all content |
-| `/ocr ./equation.jpg formula` | LaTeX formula output |
-| `/ocr ./contract.pdf text` | Text-only extraction |
-| `/ocr ./paper.pdf auto glm-ocr:q8_0` | Use specific model |
+| `/ocr` | Open settings (backend, model, split toggle) |
+| `/ocr <file> [task]` | OCR a file |
+| `/ocr <file> formula` | Math LaTeX output |
 
 ### Tasks
 
-| Task | Description | Output format |
-|---|---|---|
-| `auto` | Full document OCR (default) | Markdown + LaTeX mixed |
-| `text` | Plain text recognition | Markdown |
-| `formula` | Math formula recognition | LaTeX |
-| `table` | Table structure recognition | Markdown tables |
-| `figure` | Figure / diagram description | Natural language |
-
-### LLM-invoked (automatic)
-
-The extension registers a `pi_ocr` tool. The agent invokes it automatically:
-
-```
-> What formula is written in this screenshot?
-> OCR this 50-page PDF into markdown.
-```
-
----
-
-## MinerU PDF Splitting
-
-When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically split into ≤20-page chunks. Each chunk is a separate request with 3s spacing:
-
-```
-Splitting 85-page PDF into ≤20-page chunks…
-[1/5] uploading…
-[1/5] running (12s)
-[1/5] done
-[2/5] waiting rate limit…
-[2/5] uploading…
-[2/5] running (18s)
-[2/5] done
-...
-```
-
----
-
-## Backend Comparison
-
-| | 🦙 Ollama | ☁️ MinerU | 📐 **Pix2Text** |
-|---|---|---|---|
-| **Setup** | Install Ollama + pull model | None | `pip install` 3 packages |
-| **GPU needed** | Recommended | No | No |
-| **Internet** | No | Yes | No (first run: yes) |
-| **Math formulas** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ |
-| **Complex PDFs** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
-| **Chinese text** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **File size limit** | None | 10MB (free) | None |
-| **Page limit** | None | 20/request (free) | None |
-| **Cost** | Free (local) | Free (rate-limited) | Free (local) |
-
----
-
-## Supported File Types
-
-| Format | Ollama | MinerU | Pix2Text |
-|---|---|---|---|
-| PNG, JPG, GIF, WEBP, BMP, TIFF | ✅ | ✅ | ✅ |
-| PDF | ✅ | ✅ | ✅ |
-| Docx, PPTx, Xlsx | ❌ | ✅ | ❌ |
-
----
-
-## PDF Support Details
-
-| Backend | Conversion method | System deps |
-|---|---|---|
-| **Ollama** | `sips` (macOS page 1) / `pdftoppm` (multi-page, Linux) | `poppler` (multi-page only) |
-| **MinerU** | Direct PDF upload — no conversion | None |
-| **Pix2Text** | Built-in `recognize_pdf()` — no system deps | None |
-
----
-
-## Configuration
-
-All settings are persisted to `~/.pi/agent/settings.json`:
-
-```json
-{
-  "minimodelOcr": {
-    "backend": "ollama",
-    "model": "glm-ocr",
-    "ollamaHost": "http://localhost:11434",
-    "mineruSplitPdf": true
-  }
-}
-```
-
-Change settings via `/ocr` (interactive) or edit directly. Environment variables override file settings:
-
-```bash
-export OLLAMA_HOST="http://localhost:11434"
-export OCR_MODEL="glm-ocr"
-```
+| Task | Output |
+|---|---|
+| `auto` (default) | Markdown + LaTeX |
+| `text` | Plain Markdown |
+| `formula` | LaTeX only |
+| `table` | Markdown tables |
+| `figure` | Description |
 
 ---
 
 ## Troubleshooting
 
-### Ollama: "fetch failed" / "ECONNREFUSED"
+**"Is Ollama running?"** → `ollama serve`
 
-```bash
-# Start Ollama in the background
-ollama serve
-```
+**MinerU 429** → Rate limited. Wait a minute or switch backend.
 
-### Ollama: "model not found"
+**"python3 not found" (Pix2Text)** → `python3 -m pip install pix2text`
 
-```bash
-ollama pull glm-ocr
-```
-
-### Pix2Text: "python3 not found"
-
-```bash
-# Check your python:
-which python3 && python3 --version
-
-# If using conda:
-conda activate base && pip install pix2text
-
-# If using system python:
-python3 -m pip install --user pix2text
-```
-
-### Pix2Text: "No module named 'pix2text'"
-
-You likely installed with a different `pip` than your active `python3`:
-
-```bash
-python3 -m pip install pix2text
-```
-```
-
-### MinerU: "429 Too Many Requests"
-
-IP rate limit hit. Wait 1-2 minutes, or switch to Ollama/Pix2Text with `/ocr`.
-
-### MinerU: "file page count exceeds lightweight API limit"
-
-Enable PDF splitting: `/ocr` → toggle "MinerU: Split PDF" to ON.
-
-### MinerU: "File too large for free MinerU API"
-
-Compress the PDF at [ilovepdf.com/compress_pdf](https://ilovepdf.com/compress_pdf) or switch to a local backend with `/ocr`.
-
-### macOS multi-page PDF: "pdftoppm not found"
-
-```bash
-brew install poppler
-```
-
-### Linux multi-page PDF: "pdftoppm not found"
-
-```bash
-# Debian/Ubuntu
-sudo apt install poppler-utils
-
-# Fedora
-sudo dnf install poppler-utils
-
-# Arch
-sudo pacman -S poppler
-```
+**"pdftoppm not found" (Ollama multi-page)** → `brew install poppler` (macOS) / `sudo apt install poppler-utils` (Linux)
 
 ---
-
-## How It Works
-
-```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────────┐
-│  pi (DeepSeek)   │────▶│  pi_ocr   │────▶│  Ollama / MinerU    │
-│  (no vision)     │     │  pi extension    │     │  / Pix2Text        │
-└──────────────────┘     └──────────────────┘     └──────────────────────┘
-        │                         │                           │
-        │  "read this image"      │  POST /api/generate       │
-        │────────────────────────▶│  (Ollama)                 │
-        │                         │  or POST /api/v1/agent    │
-        │                         │  (MinerU)                 │
-        │                         │  or python3 subprocess    │
-        │                         │  (Pix2Text)              │
-        │                         │──────────────────────────▶│
-        │                         │  OCR text response        │
-        │  LaTeX / Markdown       │◀──────────────────────────│
-        │◀────────────────────────│                           │
-```
-
-The tool dispatches to your selected backend. Switch anytime with `/ocr` — no restart needed.
 
 ## License
 
