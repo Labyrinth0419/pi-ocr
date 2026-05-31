@@ -1,6 +1,6 @@
 {
   "name": "pi-minimodel-ocr",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pi extension: Multi-backend OCR — Ollama (local GPU), MinerU (free cloud API), Pix2Text (local Python, Mathpix alternative). Extracts text, LaTeX formulas, and tables from images and PDFs. Bridges the multimodal gap for non-vision LLMs like DeepSeek.",
   "keywords": [
     "pi-package",
