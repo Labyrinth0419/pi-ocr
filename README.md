@@ -29,7 +29,8 @@ Switch anytime with `/ocr` (no args).
 |---|---|---|---|
 | ☁️ | **MinerU** (default) | PDFs, tables, general docs | None — works instantly |
 | 🦙 | Ollama | Math formulas → LaTeX, offline | `brew install ollama && ollama pull glm-ocr` |
-| 📐 | Pix2Text | Math + text, CPU-only | `pip install pix2text` |
+| 🔤 | Tesseract | Plain text, ultra-light (~30MB) | `brew install tesseract` |
+| 📐 | Pix2Text | Math + text, CPU Python | `pip install pix2text` |
 
 ---
 
@@ -63,7 +64,20 @@ Switch with `/ocr` → "OCR Backend" → ollama.
 
 ---
 
-## Pix2Text (optional, for offline CPU)
+## Tesseract (optional, for plain text)
+
+Classic OCR engine. Ultra-lightweight (~30MB), CPU-only, fast. System package, zero Python.
+
+```bash
+brew install tesseract              # macOS
+sudo apt install tesseract-ocr      # Linux
+```
+
+Switch with `/ocr` → "OCR Backend" → tesseract.
+
+---
+
+## Pix2Text (optional, for math + text on CPU)
 
 Local Python OCR. Mathpix alternative — handles text + formulas on CPU.
 
@@ -102,6 +116,8 @@ First run downloads ONNX models (~50MB). Switch with `/ocr` → "OCR Backend" �
 **MinerU 429** → Rate limited. Wait a minute or switch backend.
 
 **"python3 not found" (Pix2Text)** → `python3 -m pip install pix2text`
+
+**"tesseract not found"** → `brew install tesseract` (macOS) / `sudo apt install tesseract-ocr` (Linux)
 
 **"pdftoppm not found" (Ollama multi-page)** → `brew install poppler` (macOS) / `sudo apt install poppler-utils` (Linux)
 

@@ -6,7 +6,7 @@ export const TASKS = ["text", "formula", "table", "figure", "auto"] as const;
 export type Task = (typeof TASKS)[number];
 
 /** All supported OCR backends */
-export const BACKENDS = ["ollama", "mineru", "pix2text"] as const;
+export const BACKENDS = ["mineru", "ollama", "tesseract", "pix2text"] as const;
 export type Backend = (typeof BACKENDS)[number];
 
 export interface OcrConfig {

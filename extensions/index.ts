@@ -45,6 +45,7 @@ import type { Backend, Task, OcrConfig } from "./types";
 import { TASKS, BACKENDS } from "./types";
 import { isImage, isPdf, getPdfPageCount, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./ollama";
 import { mineruOcr } from "./mineru";
+import { tesseractOcr } from "./tesseract";
 import { pix2textOcr } from "./pix2text";
 
 // ── Config persistence ───────────────────────────────────────────────────────
@@ -138,7 +139,7 @@ const ocrTool = defineTool({
       throw new Error(`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`);
     }
 
-    const backendLabel = { ollama: "🦙 Ollama", mineru: "☁️ MinerU", pix2text: "📐 Pix2Text" }[config.backend];
+    const backendLabel = { mineru: "☁️ MinerU", ollama: "🦙 Ollama", tesseract: "🔤 Tesseract", pix2text: "📐 Pix2Text" }[config.backend];
     onUpdate?.({ content: [{ type: "text", text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…` }], details: {} });
 
     const onProgress = (msg: string) => onUpdate?.({ content: [{ type: "text", text: msg }], details: {} });
@@ -159,6 +160,9 @@ const ocrTool = defineTool({
           result = await mineruOcr(filePath, resolvedTask, config.mineruSplitPdf, signal, onProgress);
           break;
         }
+        case "tesseract":
+          result = await tesseractOcr(filePath, resolvedTask, signal, onProgress);
+          break;
         case "pix2text":
           result = await pix2textOcr(filePath, resolvedTask, signal, onProgress);
           break;
@@ -175,6 +179,7 @@ const ocrTool = defineTool({
       const msg = e.message || String(e);
       let hint = "";
       if (config.backend === "ollama" && (msg.includes("fetch failed") || msg.includes("ECONNREFUSED"))) hint = "\n\n💡 Is Ollama running? Start: `ollama serve`";
+      else if (config.backend === "tesseract" && msg.includes("not found")) hint = "\n\n💡 Install: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux)";
       else if (config.backend === "pix2text" && msg.includes("python3")) hint = "\n\n💡 Install: `pip install pix2text`";
       else if (config.backend === "mineru" && msg.includes("429")) hint = "\n\n💡 MinerU rate limit. Wait a minute or switch backend with /ocr.";
       else if (config.backend === "mineru" && msg.includes("too large")) hint = "\n\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend.";
@@ -292,7 +297,9 @@ export default function ocrExtension(pi: ExtensionAPI) {
                     ".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
                     "info",
                   );
-                } else if (backend === "pix2text") {
+                } else if (backend === "tesseract") {
+                ctx.ui.notify("🔤 Tesseract: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux). ~30MB, CPU-only.", "warning");
+              } else if (backend === "pix2text") {
                   ctx.ui.notify("🐍 Pix2Text: needs `pip install pix2text`", "warning");
                 }
                 break;
