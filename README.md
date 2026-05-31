@@ -29,7 +29,7 @@ Switch anytime with `/ocr` (no args).
 |---|---|---|---|
 | ☁️ | **MinerU** (default) | PDFs, tables, general docs | None — works instantly |
 | 🦙 | Ollama | Math formulas → LaTeX, offline | `brew install ollama && ollama pull glm-ocr` |
-| 🔤 | Tesseract | Plain text, ultra-light (~30MB) | `brew install tesseract` |
+| 🔤 | Tesseract | Plain text, no formulas (~30MB) | `brew install tesseract` |
 | 📐 | Pix2Text | Math + text, CPU Python | `pip install pix2text` |
 
 ---
@@ -64,9 +64,9 @@ Switch with `/ocr` → "OCR Backend" → ollama.
 
 ---
 
-## Tesseract (optional, for plain text)
+## Tesseract (optional, plain text only)
 
-Classic OCR engine. Ultra-lightweight (~30MB), CPU-only, fast. System package, zero Python.
+Classic OCR engine. Ultra-lightweight (~30MB), CPU-only, fast. **No formula support** — use Ollama or Pix2Text for math.
 
 ```bash
 brew install tesseract              # macOS
