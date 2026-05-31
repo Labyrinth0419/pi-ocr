@@ -6,7 +6,7 @@ export const TASKS = ["text", "formula", "table", "figure", "auto"] as const;
 export type Task = (typeof TASKS)[number];
 
 /** All supported OCR backends */
-export const BACKENDS = ["mineru", "ollama", "tesseract", "pix2text"] as const;
+export const BACKENDS = ["mineru", "mineru-pro", "ollama", "tesseract", "pix2text"] as const;
 export type Backend = (typeof BACKENDS)[number];
 
 export interface OcrConfig {
@@ -15,6 +15,8 @@ export interface OcrConfig {
   model: string;
   /** MinerU: auto-split PDFs with >20 pages into free-tier chunks */
   mineruSplitPdf: boolean;
+  /** MinerU Pro: API token for precision API */
+  mineruToken?: string;
 }
 
 export interface OcrResult {

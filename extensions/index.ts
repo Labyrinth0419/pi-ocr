@@ -47,6 +47,7 @@ import { isImage, isPdf, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./
 import { mineruOcr } from "./mineru";
 import { tesseractOcr } from "./tesseract";
 import { pix2textOcr } from "./pix2text";
+import { mineruProOcr } from "./mineru-pro";
 
 // ── Config persistence ───────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ function getConfig(): OcrConfig {
     ollamaHost: process.env.OLLAMA_HOST || s.ollamaHost || "http://localhost:11434",
     model: process.env.OCR_MODEL || s.model || "glm-ocr",
     mineruSplitPdf: s.mineruSplitPdf !== false,
+    mineruToken: s.mineruToken,
   };
 }
 
@@ -148,7 +150,7 @@ const ocrTool = defineTool({
       throw new Error(`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`);
     }
 
-    const backendLabel = { mineru: "☁️ MinerU", ollama: "🦙 Ollama", tesseract: "🔤 Tesseract", pix2text: "📐 Pix2Text" }[config.backend];
+    const backendLabel = { mineru: "☁️ MinerU", "mineru-pro": "☁️ MinerU Pro", ollama: "🦙 Ollama", tesseract: "🔤 Tesseract", pix2text: "📐 Pix2Text" }[config.backend];
     onUpdate?.({ content: [{ type: "text", text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…` }], details: {} });
 
     const onProgress = (msg: string) => onUpdate?.({ content: [{ type: "text", text: msg }], details: {} });
@@ -167,6 +169,12 @@ const ocrTool = defineTool({
             onProgress(`⚠️ File is ${(stats.size / 1024 / 1024).toFixed(1)}MB. MinerU free tier limit is 10MB.\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend with /ocr.`);
           }
           result = await mineruOcr(filePath, resolvedTask, config.mineruSplitPdf, signal, onProgress);
+          break;
+        }
+        case "mineru-pro": {
+          const token = config.mineruToken || process.env.MINERU_TOKEN;
+          if (!token) throw new Error("MinerU Pro requires a token. Get one at https://mineru.net/apiManage, then set it with /ocr settings.");
+          result = await mineruProOcr(filePath, resolvedTask, token, signal, onProgress);
           break;
         }
         case "tesseract":
@@ -299,7 +307,9 @@ export default function ocrExtension(pi: ExtensionAPI) {
                 saveOcrConfig({ backend });
                 updateStatus(ctx);
                 // Show hints when switching
-                if (backend === "mineru") {
+                if (backend === "mineru-pro") {
+                ctx.ui.notify("☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages. Requires API token from https://mineru.net/apiManage", "info");
+              } else if (backend === "mineru") {
                   ctx.ui.notify(
                     "☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
                     (config.mineruSplitPdf ? "ON" : "OFF — enable in settings") +
@@ -421,9 +431,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 
   function updateStatus(ctx: ExtensionContext) {
     const config = getConfig();
-    const text = config.backend === "ollama"
-      ? `OCR: ollama ${config.model}`
-      : `OCR: ${config.backend}`;
+    const text = config.backend === "ollama" ? `OCR: ollama ${config.model}` : config.backend === "mineru-pro" ? "OCR: mineru-pro (vlm)" : `OCR: ${config.backend}`;
     ctx.ui.setStatus("pi-ocr", text);
   }
 
