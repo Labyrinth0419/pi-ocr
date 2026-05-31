@@ -10,7 +10,7 @@ Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX 
 |---|---|---|
 | 🦙 **Ollama** | Local GPU | Math formulas (LaTeX), privacy, offline |
 | ☁️ **MinerU** | Free cloud API | Complex PDFs, no GPU, zero setup |
-| 🐍 **PaddleOCR** | Local Python | Chinese/English text, no GPU, lightweight |
+| 📐 **Pix2Text** | Local Python | Math formulas + text, free Mathpix alternative |
 
 Switch anytime with `/ocr` (no args) — a visual `SettingsList` menu lets you pick and configure everything without editing JSON:
 
@@ -90,11 +90,11 @@ ollama list | grep glm-ocr
 
 ---
 
-### 🐍 PaddleOCR setup
+### 📐 Pix2Text setup
 
-PaddleOCR runs entirely in Python. It converts PDF pages to images via `pypdfium2` (pure Python, no system tools needed).
+Pix2Text runs entirely in Python. It converts PDF pages to images via `pypdfium2` (pure Python, no system tools needed).
 
-#### Step 1: Make sure you have Python 3.9+
+#### Step 1: Make sure you have Python 3.9+ (macOS/Linux)
 
 | System | Check |
 |---|---|
@@ -103,20 +103,20 @@ PaddleOCR runs entirely in Python. It converts PDF pages to images via `pypdfium
 > ⚠️ **Important:** Know which Python you're using. Run `which python3` — if it shows `conda`, `brew`, or `/usr/bin/python3`, your `pip install` must target the same Python:
 > ```bash
 > # Conda Python
-> pip install paddleocr paddlepaddle pypdfium2
+> pip install pix2text paddlepaddle pypdfium2
 > 
 > # System Python (may need --user or sudo)
-> pip install --user paddleocr paddlepaddle pypdfium2
+> pip install --user pix2text paddlepaddle pypdfium2
 > 
 > # Brew Python (macOS)
-> /opt/homebrew/bin/pip3 install paddleocr paddlepaddle pypdfium2
+> /opt/homebrew/bin/pip3 install pix2text paddlepaddle pypdfium2
 > ```
 > If unsure, use `python3 -m pip install ...` — this always installs for the active `python3`.
 
 #### Step 2: Install packages
 
 ```bash
-python3 -m pip install paddleocr paddlepaddle pypdfium2
+python3 -m pip install pix2text paddlepaddle pypdfium2
 ```
 
 > **macOS with Apple Silicon (M1/M2/M3):** PaddlePaddle does not provide native arm64 wheels. It installs x86_64 binaries which run fine under Rosetta 2 — no extra steps needed.
@@ -124,7 +124,7 @@ python3 -m pip install paddleocr paddlepaddle pypdfium2
 #### Step 3: Verify
 
 ```bash
-python3 -c "from paddleocr import PaddleOCR; print('OK')"
+python3 -c "from pix2text import Pix2Text; print('OK')"
 ```
 
 > First run downloads model weights (~100MB) to `~/.paddlex/`.
@@ -163,14 +163,14 @@ Opens an interactive `SettingsList` with keyboard navigation:
 
 ```
 ┌─ OCR Settings ─────────────────────────────────┐
-│  OCR Backend         [ollama / mineru / paddleocr]  │
+│  OCR Backend         [ollama / mineru / pix2text]  │
 │  MinerU: Split PDF   [ON / OFF]                     │
 │  Ollama Model         [glm-ocr]                     │
 │  ↑↓ navigate • ← → toggle • enter select • esc close    │
 └──────────────────────────────────────────────────┘
 ```
 
-- **Backend**: ← → to cycle ollama/mineru/paddleocr — saves immediately
+- **Backend**: ← → to cycle ollama/mineru/pix2text — saves immediately
 - **MinerU Split**: ← → to toggle ON/OFF — when ON, PDFs >20 pages are auto-split
 - **Model**: Enter opens a sub-menu with recommended models + custom input
 
@@ -230,7 +230,7 @@ When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically
 
 ## Backend Comparison
 
-| | 🦙 Ollama | ☁️ MinerU | 🐍 PaddleOCR |
+| | 🦙 Ollama | ☁️ MinerU | 📐 **Pix2Text** |
 |---|---|---|---|
 | **Setup** | Install Ollama + pull model | None | `pip install` 3 packages |
 | **GPU needed** | Recommended | No | No |
@@ -246,7 +246,7 @@ When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically
 
 ## Supported File Types
 
-| Format | Ollama | MinerU | PaddleOCR |
+| Format | Ollama | MinerU | Pix2Text |
 |---|---|---|---|
 | PNG, JPG, GIF, WEBP, BMP, TIFF | ✅ | ✅ | ✅ |
 | PDF | ✅ | ✅ | ✅ |
@@ -260,7 +260,7 @@ When `MinerU: Split PDF >20 pages` is ON (default), large PDFs are automatically
 |---|---|---|
 | **Ollama** | `sips` (macOS page 1) / `pdftoppm` (multi-page, Linux) | `poppler` (multi-page only) |
 | **MinerU** | Direct PDF upload — no conversion | None |
-| **PaddleOCR** | `pypdfium2` (Python) — no system deps | None |
+| **Pix2Text** | `pypdfium2` (Python) — no system deps | None |
 
 ---
 
@@ -303,31 +303,31 @@ ollama serve
 ollama pull glm-ocr
 ```
 
-### PaddleOCR: "python3 not found"
+### Pix2Text: "python3 not found"
 
 ```bash
 # Check your python:
 which python3 && python3 --version
 
 # If using conda:
-conda activate base && pip install paddleocr paddlepaddle pypdfium2
+conda activate base && pip install pix2text paddlepaddle pypdfium2
 
 # If using system python:
-python3 -m pip install --user paddleocr paddlepaddle pypdfium2
+python3 -m pip install --user pix2text paddlepaddle pypdfium2
 ```
 
-### PaddleOCR: "No module named 'paddleocr'"
+### Pix2Text: "No module named 'pix2text'"
 
 You likely installed with a different `pip` than your active `python3`:
 
 ```bash
 # Always use -m pip to ensure correct target:
-python3 -m pip install paddleocr paddlepaddle pypdfium2
+python3 -m pip install pix2text paddlepaddle pypdfium2
 ```
 
 ### MinerU: "429 Too Many Requests"
 
-IP rate limit hit. Wait 1-2 minutes, or switch to Ollama/PaddleOCR with `/ocr`.
+IP rate limit hit. Wait 1-2 minutes, or switch to Ollama/Pix2Text with `/ocr`.
 
 ### MinerU: "file page count exceeds lightweight API limit"
 
@@ -363,7 +363,7 @@ sudo pacman -S poppler
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────────┐
 │  pi (DeepSeek)   │────▶│  minimodel_ocr   │────▶│  Ollama / MinerU    │
-│  (no vision)     │     │  pi extension    │     │  / PaddleOCR        │
+│  (no vision)     │     │  pi extension    │     │  / Pix2Text        │
 └──────────────────┘     └──────────────────┘     └──────────────────────┘
         │                         │                           │
         │  "read this image"      │  POST /api/generate       │
@@ -371,7 +371,7 @@ sudo pacman -S poppler
         │                         │  or POST /api/v1/agent    │
         │                         │  (MinerU)                 │
         │                         │  or python3 subprocess    │
-        │                         │  (PaddleOCR)              │
+        │                         │  (Pix2Text)              │
         │                         │──────────────────────────▶│
         │                         │  OCR text response        │
         │  LaTeX / Markdown       │◀──────────────────────────│

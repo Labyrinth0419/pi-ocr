@@ -12,7 +12,7 @@
  *   3. Poll GET /api/v1/agent/parse/{task_id} until state=done
  *   4. GET markdown_url → download final Markdown
  *
- * PDF splitting uses pypdfium2 (same dep as PaddleOCR backend).
+ * PDF splitting uses pypdfium2 (same dep as Pix2Text backend).
  */
 
 import { readFileSync, mkdtempSync, unlinkSync, rmdirSync, readdirSync } from "node:fs";
@@ -158,7 +158,7 @@ async function mineruProcessFile(
   if (sizeMB > 10) {
     throw new Error(
       `File too large for free MinerU API: ${sizeMB.toFixed(1)}MB (limit: 10MB).\n` +
-      `Compress at https://ilovepdf.com/compress_pdf or switch to Ollama/PaddleOCR backend with /ocr.`
+      `Compress at https://ilovepdf.com/compress_pdf or switch to Ollama/Pix2Text backend with /ocr.`
     );
   }
 

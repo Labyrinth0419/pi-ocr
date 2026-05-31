@@ -5,7 +5,7 @@
  * using one of three backends:
  *   - Ollama (local vision models like glm-ocr)
  *   - MinerU API (free Agent API, ≤10MB, ≤20 pages)
- *   - PaddleOCR (local Python library)
+ *   - Pix2Text (local Python library)
  *
  * Single command:
  *   /ocr                    → open settings UI (backend, model, split toggle)
@@ -16,7 +16,7 @@
  * Prerequisites:
  *   Ollama:     brew install ollama && ollama pull glm-ocr
  *   MinerU:     no setup (free API, IP rate-limited)
- *   PaddleOCR:  pip install paddleocr paddlepaddle pypdfium2
+ *   Pix2Text:  pip install pix2text
  *   PDF tools:  brew install poppler (macOS multi-page PDF for Ollama)
  *
  * Install: pi install npm:pi-minimodel-ocr
@@ -45,7 +45,7 @@ import type { Backend, Task, OcrConfig } from "./types";
 import { TASKS, BACKENDS } from "./types";
 import { isImage, isPdf, getPdfPageCount, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./ollama";
 import { mineruOcr } from "./mineru";
-import { paddleOcr } from "./paddleocr";
+import { pix2textOcr } from "./pix2text";
 
 // ── Config persistence ───────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ const ocrTool = defineTool({
       throw new Error(`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`);
     }
 
-    const backendLabel = { ollama: "🦙 Ollama", mineru: "☁️ MinerU", paddleocr: "🐍 PaddleOCR" }[config.backend];
+    const backendLabel = { ollama: "🦙 Ollama", mineru: "☁️ MinerU", pix2text: "📐 Pix2Text" }[config.backend];
     onUpdate?.({ content: [{ type: "text", text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…` }], details: {} });
 
     const onProgress = (msg: string) => onUpdate?.({ content: [{ type: "text", text: msg }], details: {} });
@@ -159,8 +159,8 @@ const ocrTool = defineTool({
           result = await mineruOcr(filePath, resolvedTask, config.mineruSplitPdf, signal, onProgress);
           break;
         }
-        case "paddleocr":
-          result = await paddleOcr(filePath, resolvedTask, signal, onProgress);
+        case "pix2text":
+          result = await pix2textOcr(filePath, resolvedTask, signal, onProgress);
           break;
         default:
           throw new Error(`Unknown backend "${config.backend}"`);
@@ -175,7 +175,7 @@ const ocrTool = defineTool({
       const msg = e.message || String(e);
       let hint = "";
       if (config.backend === "ollama" && (msg.includes("fetch failed") || msg.includes("ECONNREFUSED"))) hint = "\n\n💡 Is Ollama running? Start: `ollama serve`";
-      else if (config.backend === "paddleocr" && msg.includes("python3")) hint = "\n\n💡 Install: `pip install paddleocr paddlepaddle pypdfium2`";
+      else if (config.backend === "pix2text" && msg.includes("python3")) hint = "\n\n💡 Install: `pip install pix2text`";
       else if (config.backend === "mineru" && msg.includes("429")) hint = "\n\n💡 MinerU rate limit. Wait a minute or switch backend with /ocr.";
       else if (config.backend === "mineru" && msg.includes("too large")) hint = "\n\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend.";
       throw new Error(`OCR error (${config.backend}): ${msg}${hint}`);
@@ -225,7 +225,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
   // ── Settings UI ────────────────────────────────────────────────────────────
   //
   // Shows a SettingsList with:
-  //   1. Backend selector (toggle: ollama / mineru / paddleocr)
+  //   1. Backend selector (toggle: ollama / mineru / pix2text)
   //   2. MinerU: Split PDF >20 pages (toggle: ON / OFF)
   //   3. Ollama model (current value shown; Enter opens model picker submenu)
   //
@@ -238,7 +238,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
       {
         id: "backend",
         label: "OCR Backend",
-        description: "Ollama=local GPU, MinerU=free cloud API, PaddleOCR=local Python",
+        description: "Ollama=local GPU, MinerU=free cloud API, Pix2Text=local Python",
         currentValue: config.backend,
         values: [...BACKENDS],
       },
@@ -292,8 +292,8 @@ export default function ocrExtension(pi: ExtensionAPI) {
                     ".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
                     "info",
                   );
-                } else if (backend === "paddleocr") {
-                  ctx.ui.notify("🐍 PaddleOCR: needs `pip install paddleocr paddlepaddle pypdfium2`", "warning");
+                } else if (backend === "pix2text") {
+                  ctx.ui.notify("🐍 Pix2Text: needs `pip install pix2text`", "warning");
                 }
                 break;
               }
