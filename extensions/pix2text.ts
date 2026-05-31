@@ -46,13 +46,26 @@ def progress(payload):
 
 progress({"status": "loading", "message": "Initializing Pix2Text models..."})
 
+# Auto-detect optimal GPU device
+import torch
+if torch.cuda.is_available():
+    _device = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    _device = "mps"
+else:
+    _device = "cpu"
+
+# Prevent MPS memory fragmentation on macOS
+if _device == "mps":
+    os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+
 # Suppress model-loading noise on stdout during initialization
 _real_stdout = sys.stdout
 sys.stdout = sys.stderr
 
 try:
     from pix2text import Pix2Text
-    p2t = Pix2Text.from_config(enable_formula=True, enable_table=False)
+    p2t = Pix2Text.from_config(enable_formula=True, enable_table=False, device=_device)
 finally:
     sys.stdout = _real_stdout
 
