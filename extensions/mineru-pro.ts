@@ -144,7 +144,7 @@ async function pollSingleTask(
     const state: string = data.state || "unknown";
 
     if (state === "done") {
-      return await downloadAndExtractMd(data.full_zip_url);
+      return cleanMarkdown(await downloadAndExtractMd(data.full_zip_url));
     }
     if (state === "failed") {
       throw new Error(`MinerU Pro failed: ${data.err_msg || "unknown"}`);
@@ -202,7 +202,7 @@ async function pollBatch(
       for (const r of results) {
         if (r.state === "done" && r.full_zip_url) {
           onProgress(`${progressPrefix} downloading ${r.file_name}…`);
-          const md = await downloadAndExtractMd(r.full_zip_url);
+          const md = cleanMarkdown(await downloadAndExtractMd(r.full_zip_url));
           markdowns.push(md);
         }
       }
@@ -225,6 +225,13 @@ async function pollBatch(
   throw new Error(`MinerU Pro batch ${batchId} timed out`);
 }
 
+// ── Output cleanup ───────────────────────────────────────────────────────────
+
+function cleanMarkdown(md: string): string {
+  // Remove MinerU's embedded image references
+  return md.replace(/!\[.*?\]\(images\/.*?\)\n*/g, "");
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function mineruProOcr(
@@ -245,5 +252,5 @@ export async function mineruProOcr(
   const markdown = await processLocalFile(token, filePath, fileName, "[1/1]", onProgress);
   onProgress("[1/1] done");
 
-  return { text: markdown, details: { backend: "mineru-pro", fileName } };
+  return { text: cleanMarkdown(markdown), details: { backend: "mineru-pro", fileName } };
 }
