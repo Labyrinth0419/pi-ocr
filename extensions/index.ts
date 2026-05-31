@@ -272,6 +272,21 @@ export default function ocrExtension(pi: ExtensionAPI) {
         values: ["ON", "OFF"],
       },
       {
+        id: "mineruToken",
+        label: "MinerU Pro Token",
+        description: "API token from mineru.net/apiManage (enables ≤200MB, ≤200 pages)",
+        currentValue: config.mineruToken ? "●●● configured" : "not set",
+        submenu: (_currentValue, done) => {
+          return createTokenInput(config.mineruToken || "", ctx, (token) => {
+            if (token !== undefined) {
+              saveOcrConfig({ mineruToken: token || undefined });
+              settingsListRef?.updateValue("mineruToken", token ? "●●● configured" : "not set");
+            }
+            done(token);
+          });
+        },
+      },
+      {
         id: "model",
         label: "Ollama Model",
         description: "Vision model used for OCR (only applies to Ollama backend)",
@@ -407,6 +422,28 @@ export default function ocrExtension(pi: ExtensionAPI) {
       render(width: number) { return container.render(width); },
       invalidate() { container.invalidate(); },
       handleInput(data: string) { selectList.handleInput(data); },
+    };
+  }
+
+  function createTokenInput(
+    currentToken: string,
+    ctx: ExtensionContext,
+    onDone: (token: string | undefined) => void,
+  ) {
+    const masked = currentToken ? currentToken.slice(0, 10) + "…" + currentToken.slice(-6) : "";
+
+    // Non-interactive component — just signals the parent to open an input dialog
+    setTimeout(async () => {
+      const newToken = await ctx.ui.input(
+        currentToken ? `Token: ${masked}\nPaste new token (or leave blank to clear):` : "Paste MinerU Pro token from mineru.net/apiManage:",
+        currentToken,
+      );
+      onDone(newToken?.trim() || undefined);
+    }, 100);
+
+    return {
+      render(_width: number) { return ["Opening token input…"]; },
+      invalidate() {},
     };
   }
 
