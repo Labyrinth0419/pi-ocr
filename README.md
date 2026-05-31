@@ -1,9 +1,9 @@
-# pi-minimodel-ocr
+# pi-ocr
 
 > ### ⚡ Zero setup. Works out of the box.
 >
 > Default backend: **MinerU** — a free cloud API. No install, no GPU, no API key.
-> Just `pi install npm:pi-minimodel-ocr` and OCR anything.
+> Just `pi install npm:pi-ocr` and OCR anything.
 
 Multi-backend OCR for [Pi Coding Agent](https://pi.dev) — extract text, LaTeX math formulas, and tables from images and PDFs. Choose the backend that fits your needs: free cloud API, local GPU, or pure Python.
 
@@ -44,7 +44,7 @@ Switch anytime with `/ocr` (no args) — a visual `SettingsList` menu lets you p
 ### One command
 
 ```bash
-pi install npm:pi-minimodel-ocr
+pi install npm:pi-ocr
 ```
 
 **That's it.** The default backend is ☁️ **MinerU** — a free cloud API with zero setup.

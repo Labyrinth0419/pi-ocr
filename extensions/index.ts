@@ -430,5 +430,5 @@ export default function ocrExtension(pi: ExtensionAPI) {
     }
   });
 
-  console.log("[pi-minimodel-ocr] Loaded — /ocr (file or settings), tool: minimodel_ocr");
+  console.log("[pi-ocr] Loaded — /ocr (file or settings), tool: minimodel_ocr, default: mineru");
 }
