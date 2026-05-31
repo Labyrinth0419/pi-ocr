@@ -68,7 +68,7 @@ async function convertPdfPage(pdfPath: string, pageIndex: number, outPath: strin
 async function tesseractImage(imagePath: string, _task: Task): Promise<string> {
   const { stdout, stderr, code } = await execCapture("tesseract", [
     imagePath, "stdout",
-    "-l", "eng",   // English by default; user can install more langs
+    "-l", "eng+chi_sim",   // English + Chinese simplified
     "--psm", "3",  // Auto page segmentation
   ]);
 
