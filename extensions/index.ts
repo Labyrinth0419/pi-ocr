@@ -393,12 +393,21 @@ export default function ocrExtension(pi: ExtensionAPI) {
 				currentValue: config.mineruSplitPdf ? "ON" : "OFF",
 				values: ["ON", "OFF"],
 			},
-			{
-				id: "mineruToken",
-				label: "MinerU Pro Token",
-				description: tokenLabel,
-				currentValue: config.mineruToken ? "configured" : "not set",
+		{
+			id: "mineruToken",
+			label: "MinerU Pro Token",
+			description: tokenLabel,
+			currentValue: config.mineruToken ? "configured" : "not set",
+			submenu: (_currentValue, done) => {
+				return createTokenInput(config.mineruToken || "", ctx, (token) => {
+					if (token !== undefined) {
+						saveOcrConfig({ mineruToken: token || undefined });
+						settingsListRef?.updateValue("mineruToken", token ? "configured" : "not set");
+					}
+					done(token);
+				});
 			},
+		},
 			{
 				id: "model",
 				label: "Ollama Model",
@@ -722,6 +731,58 @@ export default function ocrExtension(pi: ExtensionAPI) {
 				}
 
 				selectList.handleInput(data);
+			},
+		};
+	}
+
+	// ── Token input submenu (inline Input — no ctx.ui.input) ──────────────
+
+	function createTokenInput(
+		currentToken: string,
+		ctx: ExtensionContext,
+		onDone: (token: string | undefined) => void,
+	) {
+		const theme = ctx.ui.theme;
+		const input = new Input();
+		input.setValue(currentToken);
+
+		return {
+			render(width: number) {
+				const lines: string[] = [];
+				const add = (s: string) => lines.push(s);
+				const masked = currentToken
+					? currentToken.slice(0, 10) + "…" + currentToken.slice(-6)
+					: "not set";
+				add(theme.fg("accent", "─".repeat(width)));
+				add("");
+				add(theme.fg("text", " MinerU Pro API token from mineru.net/apiManage"));
+				add("");
+				if (currentToken) {
+					add(theme.fg("muted", ` Current: ${masked}`));
+					add("");
+				}
+				add(theme.fg("text", " Paste new token (leave blank to clear):"));
+				add("");
+				for (const line of input.render(width - 4)) {
+					add(`  ${line}`);
+				}
+				add("");
+				add(theme.fg("dim", " Enter to confirm · Esc to cancel"));
+				add(theme.fg("accent", "─".repeat(width)));
+				return lines;
+			},
+			invalidate() {},
+			handleInput(data: string) {
+				if (matchesKey(data, Key.escape)) {
+					onDone(undefined);
+					return;
+				}
+				if (matchesKey(data, Key.enter)) {
+					const value = input.getValue().trim();
+					onDone(value || undefined);
+					return;
+				}
+				input.handleInput(data);
 			},
 		};
 	}
