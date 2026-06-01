@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import type { Task, OcrResult, OcrProgressCallback } from "./types";
+import { getPdfPageCount } from "./ollama";
 
 const BASE_URL = "https://mineru.net/api/v1/agent";
 
@@ -121,6 +122,13 @@ async function pollTask(taskId: string, timeoutMs: number, progressPrefix: strin
     const resp = await fetch(`${BASE_URL}/parse/${taskId}`, {
       signal: AbortSignal.timeout(10_000),
     });
+
+    if (resp.status === 429) throw new Error("MinerU rate limit (429). Wait a minute and retry, or switch backend with /ocr.");
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`MinerU poll error ${resp.status}: ${text.slice(0, 200)}`);
+    }
+
     const data = (await resp.json()) as {
       code: number;
       data: { state: string; markdown_url?: string; err_msg?: string; err_code?: number };
@@ -228,7 +236,6 @@ export async function mineruOcr(
   }
 
   // ── PDF handling ──
-  const { getPdfPageCount } = await import("./ollama");
   const pageCount = await getPdfPageCount(filePath);
 
   const totalStats = await stat(filePath);
@@ -274,10 +281,22 @@ export async function mineruOcr(
     };
 
     const results: string[] = [];
+    const oversizedChunks: number[] = [];
+
     for (let i = 0; i < chunks.length; i++) {
       if (signal?.aborted) throw new Error("Aborted");
       const chunk = chunks[i];
       const prefix = `[${i + 1}/${chunks.length}]`;
+
+      // Check chunk size before processing
+      const chunkStats = await stat(chunk.path);
+      const chunkMB = chunkStats.size / (1024 * 1024);
+      if (chunkMB > 10) {
+        oversizedChunks.push(i + 1);
+        results.push(`## Pages ${chunk.firstPage}-${chunk.lastPage}\n\n> ⚠️ Skipped: chunk too large for free MinerU API (${chunkMB.toFixed(1)}MB, limit: 10MB). Compress PDF and retry.`);
+        onProgress(`${prefix} skipped (${chunkMB.toFixed(1)}MB — exceeds 10MB limit)`);
+        continue;
+      }
 
       if (i > 0) {
         onProgress(`${prefix} waiting rate limit…`);
@@ -287,6 +306,10 @@ export async function mineruOcr(
       const chunkName = `${fileName.replace(/\.pdf$/i, "")}_p${chunk.firstPage}-${chunk.lastPage}.pdf`;
       const markdown = await mineruProcessFile(chunk.path, chunkName, prefix, onProgress);
       results.push(`## Pages ${chunk.firstPage}-${chunk.lastPage}\n\n${markdown}`);
+    }
+
+    if (oversizedChunks.length > 0) {
+      onProgress(`⚠️ Skipped ${oversizedChunks.length} chunk(s) (chunks ${oversizedChunks.join(", ")}) — exceeded 10MB limit. Compress PDF at https://ilovepdf.com/compress_pdf and retry.`);
     }
 
     return {

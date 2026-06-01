@@ -77,8 +77,7 @@ export async function getPdfPageCount(pdfPath: string): Promise<number> {
       const n = parseInt(out.trim(), 10);
       if (!isNaN(n) && n > 0) return n;
     } catch { /* fall through */ }
-  }
-  if (process.platform === "linux") {
+  } else if (process.platform === "linux") {
     try {
       const out = await execCmdCapture("pdfinfo", [pdfPath]);
       const m = out.match(/Pages:\s+(\d+)/);
@@ -118,7 +117,7 @@ async function convertPdfPageMac(pdfPath: string, pageIndex: number, outPath: st
 async function convertPdfPage(pdfPath: string, pageIndex: number, outPath: string): Promise<void> {
   if (process.platform === "darwin") {
     await convertPdfPageMac(pdfPath, pageIndex, outPath);
-  } else {
+  } else if (process.platform === "linux") {
     await execCmdCapture("pdftoppm", [
       "-png", "-r", "150", "-f", String(pageIndex + 1), "-l", String(pageIndex + 1),
       "-singlefile", pdfPath, outPath.replace(/\.png$/, ""),

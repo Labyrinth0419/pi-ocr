@@ -17,11 +17,13 @@
  * Limits: ≤200MB, ≤200 pages, 1000 pages/day high-priority
  */
 
-import { readFileSync, mkdtempSync, readdirSync } from "node:fs";
+import { readFileSync, mkdtempSync, readdirSync, rmSync, createWriteStream } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { Task, OcrResult, OcrProgressCallback } from "./types";
 
 const BASE_URL = "https://mineru.net/api/v4";
@@ -61,17 +63,19 @@ async function downloadAndExtractMd(zipUrl: string): Promise<string> {
   const tmpDir = mkdtempSync(join(tmpdir(), "pi-mineru-pro-"));
   const zipPath = join(tmpDir, "result.zip");
 
-  // Download zip
+  // Download zip — stream to disk to avoid OOM on large files
   const resp = await fetch(zipUrl, { signal: AbortSignal.timeout(120_000) });
   if (!resp.ok) throw new Error(`Failed to download zip: ${resp.status}`);
-  const buf = Buffer.from(await resp.arrayBuffer());
-  require("node:fs").writeFileSync(zipPath, buf);
+  if (!resp.body) throw new Error("No response body");
+  await pipeline(Readable.fromWeb(resp.body as any), createWriteStream(zipPath));
 
   // Extract
   try {
     await extractZip(zipPath, tmpDir);
   } catch {
     throw new Error("Failed to extract zip — install unzip or python3");
+  } finally {
+    try { rmSync(zipPath, { force: true }); } catch { /* cleanup */ }
   }
 
   // Find and read .md file
@@ -97,7 +101,6 @@ async function downloadAndExtractMd(zipUrl: string): Promise<string> {
 async function extractZip(zipPath: string, outDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // Try unzip first
-    const { execFile } = require("node:child_process");
     execFile("unzip", ["-qo", zipPath, "-d", outDir], (err: Error | null) => {
       if (!err) return resolve();
       // Fallback: python3
@@ -112,54 +115,10 @@ with zipfile.ZipFile(sys.argv[1]) as z: z.extractall(sys.argv[2])
 }
 
 function cleanupDir(dir: string) {
-  try { require("node:fs").rmSync(dir, { recursive: true, force: true }); } catch {}
+  try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort — dir may already be gone */ }
 }
 
-// ── Single file (URL mode) ─────────────────────────────────────────────────
-
-async function processUrl(
-  token: string, fileUrl: string, fileName: string,
-  progressPrefix: string, onProgress: OcrProgressCallback,
-): Promise<string> {
-  onProgress(`${progressPrefix} submitting…`);
-  const { task_id } = await apiPost(token, `${BASE_URL}/extract/task`, {
-    url: fileUrl,
-    model_version: "vlm",
-    language: "ch",
-    enable_table: true,
-    enable_formula: true,
-  });
-
-  return await pollSingleTask(token, task_id, 600_000, progressPrefix, onProgress);
-}
-
-async function pollSingleTask(
-  token: string, taskId: string, timeoutMs: number,
-  progressPrefix: string, onProgress: OcrProgressCallback,
-): Promise<string> {
-  const start = Date.now();
-  let lastState = "";
-  while (Date.now() - start < timeoutMs) {
-    const data = await apiGet(token, `${BASE_URL}/extract/task/${taskId}`);
-    const state: string = data.state || "unknown";
-
-    if (state === "done") {
-      return cleanMarkdown(await downloadAndExtractMd(data.full_zip_url));
-    }
-    if (state === "failed") {
-      throw new Error(`MinerU Pro failed: ${data.err_msg || "unknown"}`);
-    }
-    if (state !== lastState) {
-      lastState = state;
-      onProgress(`${progressPrefix} ${state}…`);
-    }
-    await new Promise(r => setTimeout(r, 5000));
-  }
-  throw new Error(`MinerU Pro task ${taskId} timed out`);
-}
-
-// ── Local file upload (batch mode) ─────────────────────────────────────────
-
+// ── Public API ───────────────────────────────────────────────────────────────
 async function processLocalFile(
   token: string, filePath: string, fileName: string,
   progressPrefix: string, onProgress: OcrProgressCallback,
@@ -228,20 +187,20 @@ async function pollBatch(
 // ── Output cleanup ───────────────────────────────────────────────────────────
 
 function cleanMarkdown(md: string): string {
-  // Remove MinerU's embedded image references
-  return md.replace(/!\[.*?\]\(images\/.*?\)\n*/g, "");
+  // Remove MinerU's embedded image references (any image directory)
+  return md.replace(/!\[.*?\]\([^)]*\)\n*/g, "");
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function mineruProOcr(
-  filePath: string, task: Task, token: string,
-  signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
+  filePath: string, _task: Task, token: string,
+  _signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
   const ext = extname(filePath).toLowerCase();
   const fileName = basename(filePath);
 
-  if (![".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"].includes(ext)) {
+  if (![".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"].includes(ext)) {
     throw new Error(`MinerU Pro unsupported: ${ext}`);
   }
 

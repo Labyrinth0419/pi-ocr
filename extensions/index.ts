@@ -280,12 +280,12 @@ const ocrTool = defineTool({
 					},
 				],
 				details: {
+					...result.details,
 					task: resolvedTask,
 					path: filePath,
 					fullText: result.text,
 					truncated: result.text.length > 5000,
 					backend: config.backend,
-					...result.details,
 				},
 			};
 		} catch (e: any) {
@@ -393,21 +393,24 @@ export default function ocrExtension(pi: ExtensionAPI) {
 				currentValue: config.mineruSplitPdf ? "ON" : "OFF",
 				values: ["ON", "OFF"],
 			},
-		{
-			id: "mineruToken",
-			label: "MinerU Pro Token",
-			description: tokenLabel,
-			currentValue: config.mineruToken ? "configured" : "not set",
-			submenu: (_currentValue, done) => {
-				return createTokenInput(config.mineruToken || "", ctx, (token) => {
-					if (token !== undefined) {
-						saveOcrConfig({ mineruToken: token || undefined });
-						settingsListRef?.updateValue("mineruToken", token ? "configured" : "not set");
-					}
-					done(token);
-				});
+			{
+				id: "mineruToken",
+				label: "MinerU Pro Token",
+				description: tokenLabel,
+				currentValue: config.mineruToken ? "configured" : "not set",
+				submenu: (_currentValue, done) => {
+					return createTokenInput(config.mineruToken || "", ctx, (token) => {
+						if (token !== undefined) {
+							saveOcrConfig({ mineruToken: token || undefined });
+							settingsListRef?.updateValue(
+								"mineruToken",
+								token ? "configured" : "not set",
+							);
+						}
+						done(token);
+					});
+				},
 			},
-		},
 			{
 				id: "model",
 				label: "Ollama Model",
@@ -755,7 +758,9 @@ export default function ocrExtension(pi: ExtensionAPI) {
 					: "not set";
 				add(theme.fg("accent", "─".repeat(width)));
 				add("");
-				add(theme.fg("text", " MinerU Pro API token from mineru.net/apiManage"));
+				add(
+					theme.fg("text", " MinerU Pro API token from mineru.net/apiManage"),
+				);
 				add("");
 				if (currentToken) {
 					add(theme.fg("muted", ` Current: ${masked}`));

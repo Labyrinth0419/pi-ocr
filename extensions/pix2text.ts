@@ -30,7 +30,7 @@ import { isImage, isPdf } from "./ollama";
 //   stderr → progress lines: {"page": 1, "total": 10} / {"status": "loading"} / errors
 
 const PIX2TEXT_ENGINE = `
-import sys, os, json, io
+import sys, os, json, io, tempfile
 from pathlib import Path
 
 file_path = sys.argv[1]
@@ -86,10 +86,10 @@ if ext == ".pdf":
         pix = page.get_pixmap(dpi=200)
         img_bytes = pix.tobytes("png")
 
-        # Write to temp file (Pix2Text needs a file path)
-        tmp_path = f"/tmp/pi-p2t-page-{os.getpid()}-{i}.png"
-        with open(tmp_path, "wb") as f:
+        # Write to unique temp file (Pix2Text needs a file path)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             f.write(img_bytes)
+            tmp_path = f.name
 
         try:
             text = p2t.recognize(tmp_path)
@@ -133,10 +133,15 @@ async function execPythonWithProgress(
 
     child.stdout.on("data", (d) => outChunks.push(d));
 
+    // Buffer for stderr line reassembly across chunk boundaries
+    let stderrBuf = "";
     child.stderr.on("data", (d) => {
-      const text = d.toString("utf8").trim();
+      stderrBuf += d.toString("utf8");
+      const lines = stderrBuf.split("\n");
+      // Last element may be incomplete — keep it in the buffer
+      stderrBuf = lines.pop() || "";
       // Parse JSON progress lines, ignore noisy library output
-      for (const line of text.split("\n")) {
+      for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed.startsWith("{")) continue;
         try {
@@ -168,6 +173,15 @@ async function execPythonWithProgress(
     }));
 
     child.on("close", (code) => {
+      // Process any remaining buffered stderr line
+      if (stderrBuf.trim().startsWith("{")) {
+        try {
+          const p = JSON.parse(stderrBuf.trim());
+          if (p.status === "done" && p.pages) {
+            onProgress(`✅ Pix2Text complete (${p.pages} page(s))`);
+          }
+        } catch { /* not valid JSON, ignore */ }
+      }
       resolve({
         stdout: Buffer.concat(outChunks).toString("utf8").trim(),
         exitCode: code ?? 1,
@@ -180,7 +194,7 @@ async function execPythonWithProgress(
 
 export async function pix2textOcr(
   filePath: string, task: Task,
-  signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
+  _signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
   if (!isImage(filePath) && !isPdf(filePath)) {
     throw new Error(`Unsupported file type: ${basename(filePath)}`);

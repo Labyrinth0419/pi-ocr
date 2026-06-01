@@ -53,14 +53,16 @@ function cleanupDir(dir: string) {
 async function convertPdfPage(pdfPath: string, pageIndex: number, outPath: string): Promise<void> {
   if (process.platform === "darwin") {
     if (pageIndex === 0) {
-      await execCapture("sips", ["-s", "format", "png", pdfPath, "--out", outPath]);
+      const { code, stderr } = await execCapture("sips", ["-s", "format", "png", pdfPath, "--out", outPath]);
+      if (code !== 0) throw new Error(`sips PDF page 1 conversion failed (code ${code}): ${stderr}`);
       return;
     }
   }
-  await execCapture("pdftoppm", [
+  const { code, stderr } = await execCapture("pdftoppm", [
     "-png", "-r", "200", "-f", String(pageIndex + 1), "-l", String(pageIndex + 1),
     "-singlefile", pdfPath, outPath.replace(/\.png$/, ""),
   ]);
+  if (code !== 0) throw new Error(`pdftoppm page ${pageIndex + 1} failed (code ${code}): ${stderr}`);
 }
 
 // ── Tesseract OCR ────────────────────────────────────────────────────────────
