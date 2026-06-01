@@ -24,18 +24,21 @@
 
 import { Type } from "@earendil-works/pi-ai";
 import {
-  defineTool,
-  getSettingsListTheme,
-  type ExtensionAPI,
-  type ExtensionContext,
+	defineTool,
+	getSettingsListTheme,
+	type ExtensionAPI,
+	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
-  Container,
-  Text,
-  type SettingItem,
-  SettingsList,
-  type SelectItem,
-  SelectList,
+	Container,
+	Input,
+	Key,
+	matchesKey,
+	Text,
+	type SettingItem,
+	SettingsList,
+	type SelectItem,
+	SelectList,
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, extname, dirname, join } from "node:path";
@@ -43,7 +46,13 @@ import { homedir } from "node:os";
 
 import type { Backend, Task, OcrConfig } from "./types";
 import { TASKS, BACKENDS } from "./types";
-import { isImage, isPdf, ollamaOcr, ollamaCheckModel, ollamaPullModel } from "./ollama";
+import {
+	isImage,
+	isPdf,
+	ollamaOcr,
+	ollamaCheckModel,
+	ollamaPullModel,
+} from "./ollama";
 import { mineruOcr } from "./mineru";
 import { tesseractOcr } from "./tesseract";
 import { pix2textOcr } from "./pix2text";
@@ -54,415 +63,687 @@ import { mineruProOcr } from "./mineru-pro";
 const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
 
 function loadOcrConfig(): Partial<OcrConfig> {
-  try {
-    if (!existsSync(SETTINGS_PATH)) return {};
-    const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
-    // Migrate from old key (pi-minimodel-ocr) to new key (pi-ocr)
-    const old = (settings as any).minimodelOcr;
-    const current = (settings as any).piOcr;
-    if (old && !current) {
-      (settings as any).piOcr = old;
-      delete (settings as any).minimodelOcr;
-      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
-    }
-    return (settings as any).piOcr || {};
-  } catch { return {}; }
+	try {
+		if (!existsSync(SETTINGS_PATH)) return {};
+		const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+		// Migrate from old key (pi-minimodel-ocr) to new key (pi-ocr)
+		const old = (settings as any).minimodelOcr;
+		const current = (settings as any).piOcr;
+		if (old && !current) {
+			(settings as any).piOcr = old;
+			delete (settings as any).minimodelOcr;
+			writeFileSync(
+				SETTINGS_PATH,
+				JSON.stringify(settings, null, 2) + "\n",
+				"utf8",
+			);
+		}
+		return (settings as any).piOcr || {};
+	} catch {
+		return {};
+	}
 }
 
 function saveOcrConfig(updates: Partial<OcrConfig>) {
-  try {
-    const dir = dirname(SETTINGS_PATH);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const settings = existsSync(SETTINGS_PATH)
-      ? JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))
-      : {};
-    settings.piOcr = { ...(settings.piOcr || {}), ...updates };
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
-  } catch { /* best effort */ }
+	try {
+		const dir = dirname(SETTINGS_PATH);
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		const settings = existsSync(SETTINGS_PATH)
+			? JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))
+			: {};
+		settings.piOcr = { ...(settings.piOcr || {}), ...updates };
+		writeFileSync(
+			SETTINGS_PATH,
+			JSON.stringify(settings, null, 2) + "\n",
+			"utf8",
+		);
+	} catch {
+		/* best effort */
+	}
 }
 
 function getConfig(): OcrConfig {
-  const s = loadOcrConfig();
-  return {
-    backend: (BACKENDS.includes(s.backend as Backend) ? s.backend : "mineru") as Backend,
-    ollamaHost: process.env.OLLAMA_HOST || s.ollamaHost || "http://localhost:11434",
-    model: process.env.OCR_MODEL || s.model || "glm-ocr",
-    mineruSplitPdf: s.mineruSplitPdf !== false,
-    mineruToken: s.mineruToken,
-  };
+	const s = loadOcrConfig();
+	return {
+		backend: (BACKENDS.includes(s.backend as Backend)
+			? s.backend
+			: "mineru") as Backend,
+		ollamaHost:
+			process.env.OLLAMA_HOST || s.ollamaHost || "http://localhost:11434",
+		model: process.env.OCR_MODEL || s.model || "glm-ocr",
+		mineruSplitPdf: s.mineruSplitPdf !== false,
+		mineruToken: s.mineruToken,
+	};
 }
 
 // ── Recommended models ───────────────────────────────────────────────────────
 
 const RECOMMENDED_MODELS = [
-  { name: "glm-ocr:q8_0", desc: "balanced — smallest (1.6GB), fast" },
-  { name: "glm-ocr", desc: "best formula OCR (2.2GB, 94.6 OmniDocBench)" },
-  { name: "minicpm-v", desc: "strong all-around vision + OCR (8B, 5.5GB)" },
-  { name: "llama3.2-vision", desc: "Meta's vision model (11B)" },
+	{ name: "glm-ocr:q8_0", desc: "balanced — smallest (1.6GB), fast" },
+	{ name: "glm-ocr", desc: "best formula OCR (2.2GB, 94.6 OmniDocBench)" },
+	{ name: "minicpm-v", desc: "strong all-around vision + OCR (8B, 5.5GB)" },
+	{ name: "llama3.2-vision", desc: "Meta's vision model (11B)" },
 ];
 
 // ── Tool Definition ──────────────────────────────────────────────────────────
 
 const ocrSchema = Type.Object({
-  path: Type.String({
-    description:
-      "Absolute or relative path to the image or PDF file to OCR. Supported formats: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.",
-  }),
-  task: Type.Optional(
-    Type.String({
-      description:
-        'OCR task type. "text" for Markdown text, "formula" for LaTeX math, "table" for Markdown tables, "figure" for description, "auto" for full document OCR (default).',
-    }),
-  ),
-  model: Type.Optional(
-    Type.String({
-      description:
-        "Ollama model to use for OCR. Defaults to 'glm-ocr'. You can use any Ollama vision model, e.g. 'glm-ocr:q8_0' for the 8-bit quantized version, 'llama3.2-vision', 'minicpm-v', etc.",
-    }),
-  ),
+	path: Type.String({
+		description:
+			"Absolute or relative path to the image or PDF file to OCR. Supported formats: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.",
+	}),
+	task: Type.Optional(
+		Type.String({
+			description:
+				'OCR task type. "text" for Markdown text, "formula" for LaTeX math, "table" for Markdown tables, "figure" for description, "auto" for full document OCR (default).',
+		}),
+	),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Ollama model to use for OCR. Defaults to 'glm-ocr'. You can use any Ollama vision model, e.g. 'glm-ocr:q8_0' for the 8-bit quantized version, 'llama3.2-vision', 'minicpm-v', etc.",
+		}),
+	),
 });
 
 const ocrTool = defineTool({
-  name: "pi_ocr",
-  label: "Minimodel OCR",
-  description:
-    "Extract text, math formulas (LaTeX), and tables from images or PDFs using local Ollama vision models. " +
-    "Use this when you need to read text from an image or PDF, especially mathematical formulas that need LaTeX output. " +
-    "This is the tool to use when working with non-vision LLMs like DeepSeek that cannot process images directly.",
-  promptSnippet:
-    "Extract text/formulas/tables from images and PDFs using local Ollama OCR",
-  promptGuidelines: [
-    "When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
-    "For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
-    "Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
-  ],
-  parameters: ocrSchema,
-  async execute(_toolCallId, params, signal, onUpdate, _ctx) {
-    const { path: filePath, task = "auto", model: modelOverride } = params as {
-      path: string; task?: string; model?: string;
-    };
-    const resolvedTask = (TASKS.includes(task as Task) ? task : "auto") as Task;
-    const config = getConfig();
-    const resolvedModel = modelOverride || config.model;
+	name: "pi_ocr",
+	label: "Minimodel OCR",
+	description:
+		"Extract text, math formulas (LaTeX), and tables from images or PDFs using local Ollama vision models. " +
+		"Use this when you need to read text from an image or PDF, especially mathematical formulas that need LaTeX output. " +
+		"This is the tool to use when working with non-vision LLMs like DeepSeek that cannot process images directly.",
+	promptSnippet:
+		"Extract text/formulas/tables from images and PDFs using local Ollama OCR",
+	promptGuidelines: [
+		"When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
+		"For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
+		"Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
+	],
+	parameters: ocrSchema,
+	async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+		const {
+			path: filePath,
+			task = "auto",
+			model: modelOverride,
+		} = params as {
+			path: string;
+			task?: string;
+			model?: string;
+		};
+		const resolvedTask = (TASKS.includes(task as Task) ? task : "auto") as Task;
+		const config = getConfig();
+		const resolvedModel = modelOverride || config.model;
 
-    if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
-    if (!isImage(filePath) && !isPdf(filePath)) {
-      throw new Error(`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`);
-    }
+		if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+		if (!isImage(filePath) && !isPdf(filePath)) {
+			throw new Error(
+				`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`,
+			);
+		}
 
-    const backendLabel = { mineru: "☁️ MinerU", "mineru-pro": "☁️ MinerU Pro", ollama: "🦙 Ollama", tesseract: "🔤 Tesseract", pix2text: "📐 Pix2Text" }[config.backend];
-    onUpdate?.({ content: [{ type: "text", text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…` }], details: {} });
+		const backendLabel = {
+			mineru: "☁️ MinerU",
+			"mineru-pro": "☁️ MinerU Pro",
+			ollama: "🦙 Ollama",
+			tesseract: "🔤 Tesseract",
+			pix2text: "📐 Pix2Text",
+		}[config.backend];
+		onUpdate?.({
+			content: [
+				{
+					type: "text",
+					text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…`,
+				},
+			],
+			details: {},
+		});
 
-    const onProgress = (msg: string) => onUpdate?.({ content: [{ type: "text", text: msg }], details: {} });
+		const onProgress = (msg: string) =>
+			onUpdate?.({ content: [{ type: "text", text: msg }], details: {} });
 
-    try {
-      let result: { text: string; details: Record<string, unknown> };
+		try {
+			let result: { text: string; details: Record<string, unknown> };
 
-      switch (config.backend) {
-        case "ollama":
-          result = await ollamaOcr(filePath, resolvedTask, config.ollamaHost, resolvedModel, signal, onProgress);
-          break;
-        case "mineru": {
-          const { stat } = await import("node:fs/promises");
-          const stats = await stat(filePath);
-          if (stats.size > 10 * 1024 * 1024) {
-            onProgress(`⚠️ File is ${(stats.size / 1024 / 1024).toFixed(1)}MB. MinerU free tier limit is 10MB.\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend with /ocr.`);
-          }
-          result = await mineruOcr(filePath, resolvedTask, config.mineruSplitPdf, signal, onProgress);
-          break;
-        }
-        case "mineru-pro": {
-          const token = config.mineruToken || process.env.MINERU_TOKEN;
-          if (!token) throw new Error("MinerU Pro requires a token. Get one at https://mineru.net/apiManage, then set it with /ocr settings.");
-          result = await mineruProOcr(filePath, resolvedTask, token, signal, onProgress);
-          break;
-        }
-        case "tesseract":
-          result = await tesseractOcr(filePath, resolvedTask, signal, onProgress);
-          break;
-        case "pix2text":
-          result = await pix2textOcr(filePath, resolvedTask, signal, onProgress);
-          break;
-        default:
-          throw new Error(`Unknown backend "${config.backend}"`);
-      }
+			switch (config.backend) {
+				case "ollama":
+					result = await ollamaOcr(
+						filePath,
+						resolvedTask,
+						config.ollamaHost,
+						resolvedModel,
+						signal,
+						onProgress,
+					);
+					break;
+				case "mineru": {
+					const { stat } = await import("node:fs/promises");
+					const stats = await stat(filePath);
+					if (stats.size > 10 * 1024 * 1024) {
+						onProgress(
+							`⚠️ File is ${(stats.size / 1024 / 1024).toFixed(1)}MB. MinerU free tier limit is 10MB.\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend with /ocr.`,
+						);
+					}
+					result = await mineruOcr(
+						filePath,
+						resolvedTask,
+						config.mineruSplitPdf,
+						signal,
+						onProgress,
+					);
+					break;
+				}
+				case "mineru-pro": {
+					const token = config.mineruToken || process.env.MINERU_TOKEN;
+					if (!token)
+						throw new Error(
+							"MinerU Pro requires a token. Get one at https://mineru.net/apiManage, then set it with /ocr settings.",
+						);
+					result = await mineruProOcr(
+						filePath,
+						resolvedTask,
+						token,
+						signal,
+						onProgress,
+					);
+					break;
+				}
+				case "tesseract":
+					result = await tesseractOcr(
+						filePath,
+						resolvedTask,
+						signal,
+						onProgress,
+					);
+					break;
+				case "pix2text":
+					result = await pix2textOcr(
+						filePath,
+						resolvedTask,
+						signal,
+						onProgress,
+					);
+					break;
+				default:
+					throw new Error(`Unknown backend "${config.backend}"`);
+			}
 
-      const preview = result.text.length > 5000 ? result.text.slice(0, 5000) + "\n\n… (truncated)" : result.text;
-      return {
-        content: [{ type: "text", text: `## OCR Result (${resolvedTask})\n\n**File:** \`${basename(filePath)}\`\n**Backend:** ${config.backend}\n\n${preview}` }],
-        details: { task: resolvedTask, path: filePath, fullText: result.text, truncated: result.text.length > 5000, backend: config.backend, ...result.details },
-      };
-    } catch (e: any) {
-      const msg = e.message || String(e);
-      let hint = "";
-      if (config.backend === "ollama" && (msg.includes("fetch failed") || msg.includes("ECONNREFUSED"))) hint = "\n\n💡 Is Ollama running? Start: `ollama serve`";
-      else if (config.backend === "tesseract" && msg.includes("not found")) hint = "\n\n💡 Install: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux)";
-      else if (config.backend === "pix2text" && msg.includes("python3")) hint = "\n\n💡 Install: `pip install pix2text`";
-      else if (config.backend === "mineru" && msg.includes("429")) hint = "\n\n💡 MinerU rate limit. Wait a minute or switch backend with /ocr.";
-      else if (config.backend === "mineru" && msg.includes("too large")) hint = "\n\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend.";
-      throw new Error(`OCR error (${config.backend}): ${msg}${hint}`);
-    }
-  },
+			const preview =
+				result.text.length > 5000
+					? result.text.slice(0, 5000) + "\n\n… (truncated)"
+					: result.text;
+			return {
+				content: [
+					{
+						type: "text",
+						text: `## OCR Result (${resolvedTask})\n\n**File:** \`${basename(filePath)}\`\n**Backend:** ${config.backend}\n\n${preview}`,
+					},
+				],
+				details: {
+					task: resolvedTask,
+					path: filePath,
+					fullText: result.text,
+					truncated: result.text.length > 5000,
+					backend: config.backend,
+					...result.details,
+				},
+			};
+		} catch (e: any) {
+			const msg = e.message || String(e);
+			let hint = "";
+			if (
+				config.backend === "ollama" &&
+				(msg.includes("fetch failed") || msg.includes("ECONNREFUSED"))
+			)
+				hint = "\n\n💡 Is Ollama running? Start: `ollama serve`";
+			else if (config.backend === "tesseract" && msg.includes("not found"))
+				hint =
+					"\n\n💡 Install: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux)";
+			else if (config.backend === "pix2text" && msg.includes("python3"))
+				hint = "\n\n💡 Install: `pip install pix2text`";
+			else if (config.backend === "mineru" && msg.includes("429"))
+				hint =
+					"\n\n💡 MinerU rate limit. Wait a minute or switch backend with /ocr.";
+			else if (config.backend === "mineru" && msg.includes("too large"))
+				hint =
+					"\n\n💡 Compress at https://ilovepdf.com/compress_pdf or switch backend.";
+			throw new Error(`OCR error (${config.backend}): ${msg}${hint}`);
+		}
+	},
 });
 
 // ── Extension Entry ─────────────────────────────────────────────────────────
 
 export default function ocrExtension(pi: ExtensionAPI) {
-  pi.registerTool(ocrTool);
+	pi.registerTool(ocrTool);
 
-  // ── /ocr command ─────────────────────────────────────────────────────────
+	// ── /ocr command ─────────────────────────────────────────────────────────
 
-  pi.registerCommand("ocr", {
-    description: "OCR an image or PDF, or configure OCR settings",
-    handler: async (args, ctx) => {
-      const trimmed = (args || "").trim();
+	pi.registerCommand("ocr", {
+		description: "OCR an image or PDF, or configure OCR settings",
+		handler: async (args, ctx) => {
+			const trimmed = (args || "").trim();
 
-      // No args → open settings UI
-      if (!trimmed) {
-        await showOcrSettings(ctx);
-        return;
-      }
+			// No args → open settings UI
+			if (!trimmed) {
+				await showOcrSettings(ctx);
+				return;
+			}
 
-      // Args → OCR a file
-      const parts = trimmed.split(/\s+/);
-      const filePath = parts[0];
-      const task = parts[1] || "auto";
-      const model = parts[2] || undefined;
+			// Args → OCR a file
+			const parts = trimmed.split(/\s+/);
+			const filePath = parts[0];
+			const task = parts[1] || "auto";
+			const model = parts[2] || undefined;
 
-      if (!existsSync(filePath)) {
-        ctx.ui.notify(`File not found: ${filePath}`, "error");
-        return;
-      }
+			if (!existsSync(filePath)) {
+				ctx.ui.notify(`File not found: ${filePath}`, "error");
+				return;
+			}
 
-      try {
-        const result = await ocrTool.execute("", { path: filePath, task, model }, undefined as any, undefined, ctx);
-        const textLen = (result.details as any)?.fullText?.length || 0;
-        ctx.ui.notify(`OCR complete — ${textLen} chars via ${(result.details as any)?.backend || "?"}`, "info");
-      } catch (e: any) {
-        ctx.ui.notify(e.message?.slice(0, 200) || "OCR failed", "error");
-      }
-    },
-  });
+			try {
+				const result = await ocrTool.execute(
+					"",
+					{ path: filePath, task, model },
+					undefined as any,
+					undefined,
+					ctx,
+				);
+				const textLen = (result.details as any)?.fullText?.length || 0;
+				ctx.ui.notify(
+					`OCR complete — ${textLen} chars via ${(result.details as any)?.backend || "?"}`,
+					"info",
+				);
+			} catch (e: any) {
+				ctx.ui.notify(e.message?.slice(0, 200) || "OCR failed", "error");
+			}
+		},
+	});
 
-  // ── Settings UI ────────────────────────────────────────────────────────────
-  //
-  // Shows a SettingsList with:
-  //   1. Backend selector (toggle: ollama / mineru / pix2text)
-  //   2. MinerU: Split PDF >20 pages (toggle: ON / OFF)
-  //   3. Ollama model (current value shown; Enter opens model picker submenu)
-  //
-  // Changes are saved immediately to ~/.pi/agent/settings.json.
+	// ── Settings UI ────────────────────────────────────────────────────────────
+	//
+	// Shows a SettingsList with:
+	//   1. Backend selector (toggle: ollama / mineru / pix2text)
+	//   2. MinerU: Split PDF >20 pages (toggle: ON / OFF)
+	//   3. Ollama model (current value shown; Enter opens model picker submenu)
+	//
+	// Changes are saved immediately to ~/.pi/agent/settings.json.
 
-  async function showOcrSettings(ctx: ExtensionContext) {
-    const config = getConfig();
+	async function showOcrSettings(ctx: ExtensionContext) {
+		const config = getConfig();
 
-    // Build token info line
-    const tokenLabel = config.mineruToken
-      ? `●●● configured (${config.mineruToken.slice(-6)})`
-      : "not set — save to: ~/.pi/agent/settings.json → piOcr.mineruToken";
+		// Build token info line
+		const tokenLabel = config.mineruToken
+			? `●●● configured (${config.mineruToken.slice(-6)})`
+			: "not set — save to: ~/.pi/agent/settings.json → piOcr.mineruToken";
 
-    const items: SettingItem[] = [
-      {
-        id: "backend",
-        label: "OCR Backend",
-        description: "Ollama=local GPU, MinerU=free cloud API, Pix2Text=local Python",
-        currentValue: config.backend,
-        values: [...BACKENDS],
-      },
-      {
-        id: "mineruSplitPdf",
-        label: "MinerU: Split PDF >20 pages",
-        description: "Auto-split large PDFs into ≤20-page free-tier chunks",
-        currentValue: config.mineruSplitPdf ? "ON" : "OFF",
-        values: ["ON", "OFF"],
-      },
-      {
-        id: "mineruToken",
-        label: "MinerU Pro Token",
-        description: tokenLabel,
-        currentValue: config.mineruToken ? "configured" : "not set",
-      },
-      {
-        id: "model",
-        label: "Ollama Model",
-        description: "Vision model used for OCR (only applies to Ollama backend)",
-        currentValue: config.model,
-        submenu: (_currentValue, done) => {
-          return createModelSelector(config.model, ctx, (selected) => {
-            if (selected) {
-              saveOcrConfig({ model: selected });
-              process.env.OCR_MODEL = selected;
-              updateStatus(ctx);
-              settingsListRef?.updateValue("model", selected);
-            }
-            done(selected);
-          });
-        },
-      },
-    ];
+		const items: SettingItem[] = [
+			{
+				id: "backend",
+				label: "OCR Backend",
+				description:
+					"Ollama=local GPU, MinerU=free cloud API, Pix2Text=local Python",
+				currentValue: config.backend,
+				values: [...BACKENDS],
+			},
+			{
+				id: "mineruSplitPdf",
+				label: "MinerU: Split PDF >20 pages",
+				description: "Auto-split large PDFs into ≤20-page free-tier chunks",
+				currentValue: config.mineruSplitPdf ? "ON" : "OFF",
+				values: ["ON", "OFF"],
+			},
+			{
+				id: "mineruToken",
+				label: "MinerU Pro Token",
+				description: tokenLabel,
+				currentValue: config.mineruToken ? "configured" : "not set",
+			},
+			{
+				id: "model",
+				label: "Ollama Model",
+				description:
+					"Vision model used for OCR (only applies to Ollama backend)",
+				currentValue: config.model,
+				submenu: (_currentValue, done) => {
+					return createModelSelector(config.model, ctx, (selected) => {
+						if (selected) {
+							saveOcrConfig({ model: selected });
+							process.env.OCR_MODEL = selected;
+							updateStatus(ctx);
+							settingsListRef?.updateValue("model", selected);
+						}
+						done(selected);
+					});
+				},
+			},
+		];
 
-    let settingsListRef: SettingsList | null = null;
+		let settingsListRef: SettingsList | null = null;
 
-    await new Promise<void>((resolve) => {
-      ctx.ui.custom((tui, theme, _kb, done) => {
-        const settingsList = new SettingsList(
-          items,
-          8, // max visible items
-          getSettingsListTheme(),
-          (id, newValue) => {
-            // onChange — save immediately
-            switch (id) {
-              case "backend": {
-                const backend = BACKENDS.includes(newValue as Backend) ? newValue as Backend : "ollama";
-                saveOcrConfig({ backend });
-                updateStatus(ctx);
-                // Show hints when switching
-                if (backend === "mineru-pro") {
-                ctx.ui.notify("☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages.\nToken → ~/.pi/agent/settings.json → piOcr.mineruToken\nGet one at https://mineru.net/apiManage", "info");
-              } else if (backend === "mineru") {
-                  ctx.ui.notify(
-                    "☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
-                    (config.mineruSplitPdf ? "ON" : "OFF — enable in settings") +
-                    ".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
-                    "info",
-                  );
-                } else if (backend === "tesseract") {
-                ctx.ui.notify("🔤 Tesseract: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux). ~30MB, CPU-only.", "warning");
-              } else if (backend === "pix2text") {
-                  ctx.ui.notify("🐍 Pix2Text: needs `pip install pix2text`", "warning");
-                }
-                break;
-              }
-              case "mineruSplitPdf":
-                saveOcrConfig({ mineruSplitPdf: newValue === "ON" });
-                break;
-            }
-          },
-          () => done(undefined), // onCancel
-        );
+		await new Promise<void>((resolve) => {
+			ctx.ui.custom((tui, theme, _kb, done) => {
+				const settingsList = new SettingsList(
+					items,
+					8, // max visible items
+					getSettingsListTheme(),
+					(id, newValue) => {
+						// onChange — save immediately
+						switch (id) {
+							case "backend": {
+								const backend = BACKENDS.includes(newValue as Backend)
+									? (newValue as Backend)
+									: "ollama";
+								saveOcrConfig({ backend });
+								updateStatus(ctx);
+								// Show hints when switching
+								if (backend === "mineru-pro") {
+									ctx.ui.notify(
+										"☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages.\nToken → ~/.pi/agent/settings.json → piOcr.mineruToken\nGet one at https://mineru.net/apiManage",
+										"info",
+									);
+								} else if (backend === "mineru") {
+									ctx.ui.notify(
+										"☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
+											(config.mineruSplitPdf
+												? "ON"
+												: "OFF — enable in settings") +
+											".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
+										"info",
+									);
+								} else if (backend === "tesseract") {
+									ctx.ui.notify(
+										"🔤 Tesseract: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux). ~30MB, CPU-only.",
+										"warning",
+									);
+								} else if (backend === "pix2text") {
+									ctx.ui.notify(
+										"🐍 Pix2Text: needs `pip install pix2text`",
+										"warning",
+									);
+								}
+								break;
+							}
+							case "mineruSplitPdf":
+								saveOcrConfig({ mineruSplitPdf: newValue === "ON" });
+								break;
+						}
+					},
+					() => done(undefined), // onCancel
+				);
 
-        settingsListRef = settingsList;
+				settingsListRef = settingsList;
 
-        const container = new Container();
-        container.addChild(new Text(theme.fg("accent", theme.bold("OCR Settings")), 1, 0));
-        container.addChild(settingsList);
-        container.addChild(
-          new Text(theme.fg("dim", "↑↓ navigate • ← → toggle • enter select • esc close"), 1, 0),
-        );
+				const container = new Container();
+				container.addChild(
+					new Text(theme.fg("accent", theme.bold("OCR Settings")), 1, 0),
+				);
+				container.addChild(settingsList);
+				container.addChild(
+					new Text(
+						theme.fg(
+							"dim",
+							"↑↓ navigate • ← → toggle • enter select • esc close",
+						),
+						1,
+						0,
+					),
+				);
 
-        return {
-          render(width: number) {
-            return container.render(width);
-          },
-          invalidate() {
-            container.invalidate();
-          },
-          handleInput(data: string) {
-            settingsList.handleInput(data);
-            tui.requestRender();
-          },
-        };
-      });
-    });
-  }
+				return {
+					render(width: number) {
+						return container.render(width);
+					},
+					invalidate() {
+						container.invalidate();
+					},
+					handleInput(data: string) {
+						settingsList.handleInput(data);
+						tui.requestRender();
+					},
+				};
+			});
+		});
+	}
 
-  // ── Model selector submenu ─────────────────────────────────────────────────
+	// ── Model selector submenu ─────────────────────────────────────────────────
 
-  function createModelSelector(
-    currentModel: string,
-    ctx: ExtensionContext,
-    onDone: (selected: string | undefined) => void,
-  ) {
-    const items: SelectItem[] = RECOMMENDED_MODELS.map((m) => ({
-      value: m.name,
-      label: m.name === currentModel ? `${m.name} ✓` : m.name,
-      description: m.desc,
-    }));
-    items.push({
-      value: "__custom__",
-      label: "Type a custom name…",
-      description: "Enter any Ollama model name",
-    });
+	// Submenu states: "list" | "input" | "confirm-pull" | "pulling"
+	interface ModelSubmenuState {
+		mode: "list" | "input" | "confirm-pull" | "pulling";
+		selectedModel: string;
+		confirmYes: boolean;
+	}
 
-    const container = new Container();
-    container.addChild(new Text("Choose Ollama Model", 1, 0));
+	function createModelSelector(
+		currentModel: string,
+		ctx: ExtensionContext,
+		onDone: (selected: string | undefined) => void,
+	) {
+		const items: SelectItem[] = RECOMMENDED_MODELS.map((m) => ({
+			value: m.name,
+			label: m.name === currentModel ? `${m.name} ✓` : m.name,
+			description: m.desc,
+		}));
+		items.push({
+			value: "__custom__",
+			label: "Type a custom name…",
+			description: "Enter any Ollama model name",
+		});
 
-    const selectList = new SelectList(items, Math.min(items.length, 8), {
-      selectedPrefix: (text) => ctx.ui.theme.fg("accent", text),
-      selectedText: (text) => ctx.ui.theme.fg("accent", text),
-      description: (text) => ctx.ui.theme.fg("muted", text),
-      scrollInfo: (text) => ctx.ui.theme.fg("dim", text),
-      noMatch: (text) => ctx.ui.theme.fg("warning", text),
-    });
+		const state: ModelSubmenuState = {
+			mode: "list",
+			selectedModel: "",
+			confirmYes: true,
+		};
 
-    selectList.onSelect = async (item) => {
-      if (item.value === "__custom__") {
-        const custom = await ctx.ui.input("Enter Ollama model name:", currentModel);
-        if (custom?.trim()) {
-          await ensureModelPulled(custom.trim(), ctx);
-          onDone(custom.trim());
-        } else {
-          onDone(undefined);
-        }
-        return;
-      }
-      await ensureModelPulled(item.value, ctx);
-      onDone(item.value);
-    };
+		// Notifications to fire AFTER component is dismissed (avoid modal-in-modal)
+		const pendingNotify: Array<{ msg: string; level: "info" | "error" | "warning" }> = [];
 
-    selectList.onCancel = () => onDone(undefined);
-    container.addChild(selectList);
+		const theme = ctx.ui.theme;
 
-    return {
-      render(width: number) { return container.render(width); },
-      invalidate() { container.invalidate(); },
-      handleInput(data: string) { selectList.handleInput(data); },
-    };
-  }
+		// Inline input for custom model name
+		const nameInput = new Input();
 
-  async function ensureModelPulled(model: string, ctx: ExtensionContext) {
-    const config = getConfig();
-    const exists = await ollamaCheckModel(config.ollamaHost, model);
-    if (!exists) {
-      const pull = await ctx.ui.confirm(
-        "Model not found",
-        `"${model}" is not pulled locally.\n\nPull it now? (ollama pull ${model})`,
-      );
-      if (pull) {
-        ctx.ui.notify(`Pulling ${model}…`, "info");
-        ollamaPullModel(model)
-          .then(() => ctx.ui.notify(`${model} ready`, "info"))
-          .catch((e) => ctx.ui.notify(`Pull failed: ${e.message}`.slice(0, 200), "error"));
-      }
-    }
-  }
+		const container = new Container();
+		container.addChild(new Text("Choose Ollama Model", 1, 0));
 
-  // ── Status bar ─────────────────────────────────────────────────────────────
+		const selectList = new SelectList(items, Math.min(items.length, 8), {
+			selectedPrefix: (text) => theme.fg("accent", text),
+			selectedText: (text) => theme.fg("accent", text),
+			description: (text) => theme.fg("muted", text),
+			scrollInfo: (text) => theme.fg("dim", text),
+			noMatch: (text) => theme.fg("warning", text),
+		});
 
-  function updateStatus(ctx: ExtensionContext) {
-    const config = getConfig();
-    const text = config.backend === "ollama" ? `OCR: ollama ${config.model}` : config.backend === "mineru-pro" ? "OCR: mineru-pro (vlm)" : `OCR: ${config.backend}`;
-    ctx.ui.setStatus("pi-ocr", text);
-  }
+		// Fire pending notifications and call onDone
+		function finalize(selected: string | undefined) {
+			// Schedule notifications for after dismissal
+			for (const n of pendingNotify) {
+				ctx.ui.notify(n.msg, n.level);
+			}
+			onDone(selected);
+		}
 
-  // ── Startup ────────────────────────────────────────────────────────────────
+		selectList.onSelect = async (item) => {
+			if (item.value === "__custom__") {
+				state.mode = "input";
+				nameInput.setValue(currentModel);
+				return;
+			}
+			// Check if model needs pulling
+			const config = getConfig();
+			const exists = await ollamaCheckModel(config.ollamaHost, item.value);
+			if (!exists) {
+				state.mode = "confirm-pull";
+				state.selectedModel = item.value;
+				state.confirmYes = true;
+				return;
+			}
+			finalize(item.value);
+		};
 
-  pi.on("session_start", async (_event, ctx) => {
-    updateStatus(ctx);
+		selectList.onCancel = () => finalize(undefined);
+		container.addChild(selectList);
 
-    // Proactive check: macOS multi-page PDF support
-    if (process.platform === "darwin" && getConfig().backend === "ollama") {
-      const { spawn } = await import("node:child_process");
-      const hasPdftoppm = await new Promise<boolean>((resolve) => {
-        const child = spawn("pdftoppm", ["-v"], { stdio: "ignore" });
-        child.on("close", (code) => resolve(code === 0));
-        child.on("error", () => resolve(false));
-      });
-      if (!hasPdftoppm) {
-        ctx.ui.notify("💡 Multi-page PDF via Ollama needs pdftoppm: brew install poppler", "warning");
-      }
-    }
-  });
+		return {
+			render(width: number) {
+				if (state.mode === "input") {
+					const lines: string[] = [];
+					const add = (s: string) => lines.push(s);
+					add(theme.fg("accent", "─".repeat(width)));
+					add("");
+					add(theme.fg("text", " Enter custom Ollama model name:"));
+					add("");
+					for (const line of nameInput.render(width - 4)) {
+						add(`  ${line}`);
+					}
+					add("");
+					add(theme.fg("dim", " Enter to confirm · Esc to cancel"));
+					add(theme.fg("accent", "─".repeat(width)));
+					return lines;
+				}
 
-  console.log("[pi-ocr] Loaded — /ocr (file or settings), tool: pi_ocr, default: mineru");
+				if (state.mode === "confirm-pull") {
+					const lines: string[] = [];
+					const add = (s: string) => lines.push(s);
+					add(theme.fg("accent", "─".repeat(width)));
+					add("");
+					add(theme.fg("warning", ` Model "${state.selectedModel}" is not pulled locally.`));
+					add("");
+					add(theme.fg("text", ` Pull it now? (ollama pull ${state.selectedModel})`));
+					add("");
+					const yesStyle = state.confirmYes ? theme.fg("accent", ">") : " ";
+					const noStyle = !state.confirmYes ? theme.fg("accent", ">") : " ";
+					add(`  ${yesStyle} ${state.confirmYes ? theme.fg("accent", "Yes") : theme.fg("muted", "Yes")}  ${noStyle} ${!state.confirmYes ? theme.fg("accent", "No") : theme.fg("muted", "No")}`);
+					add("");
+					add(theme.fg("dim", " ← → toggle · Enter confirm · Esc cancel"));
+					add(theme.fg("accent", "─".repeat(width)));
+					return lines;
+				}
+
+				if (state.mode === "pulling") {
+					const lines: string[] = [];
+					const add = (s: string) => lines.push(s);
+					add(theme.fg("accent", "─".repeat(width)));
+					add("");
+					add(theme.fg("text", ` Pulling ${state.selectedModel}…`));
+					add("");
+					add(theme.fg("dim", " Please wait…"));
+					add(theme.fg("accent", "─".repeat(width)));
+					return lines;
+				}
+
+				return container.render(width);
+			},
+			invalidate() {
+				container.invalidate();
+			},
+			handleInput(data: string) {
+				if (state.mode === "input") {
+					if (matchesKey(data, Key.escape)) {
+						state.mode = "list";
+						nameInput.setValue("");
+						return;
+					}
+					if (matchesKey(data, Key.enter)) {
+						const value = nameInput.getValue().trim();
+						if (!value) {
+							state.mode = "list";
+							return;
+						}
+						state.selectedModel = value;
+						// Check if model exists — async, but we'll handle in next frame
+						const config = getConfig();
+						ollamaCheckModel(config.ollamaHost, value).then((exists) => {
+							if (!exists) {
+								state.mode = "confirm-pull";
+								state.confirmYes = true;
+							} else {
+								finalize(value);
+							}
+						});
+						state.mode = "pulling"; // brief loading state
+						return;
+					}
+					nameInput.handleInput(data);
+					return;
+				}
+
+				if (state.mode === "confirm-pull") {
+					if (matchesKey(data, Key.escape)) {
+						state.mode = "list";
+						return;
+					}
+					if (matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
+						state.confirmYes = !state.confirmYes;
+						return;
+					}
+					if (matchesKey(data, Key.enter)) {
+						if (state.confirmYes) {
+							pendingNotify.push({ msg: `Pulling ${state.selectedModel}…`, level: "info" });
+							ollamaPullModel(state.selectedModel)
+								.then(() => {
+									ctx.ui.notify(`${state.selectedModel} ready`, "info");
+								})
+								.catch((e: any) => {
+									ctx.ui.notify(`Pull failed: ${e.message}`.slice(0, 200), "error");
+								});
+							finalize(state.selectedModel);
+						} else {
+							state.mode = "list";
+						}
+						return;
+					}
+					return;
+				}
+
+				if (state.mode === "pulling") {
+					// Block all input while loading
+					return;
+				}
+
+				selectList.handleInput(data);
+			},
+		};
+	}
+
+	// ── Status bar ─────────────────────────────────────────────────────────────
+
+	function updateStatus(ctx: ExtensionContext) {
+		const config = getConfig();
+		const text =
+			config.backend === "ollama"
+				? `OCR: ollama ${config.model}`
+				: config.backend === "mineru-pro"
+					? "OCR: mineru-pro (vlm)"
+					: `OCR: ${config.backend}`;
+		ctx.ui.setStatus("pi-ocr", text);
+	}
+
+	// ── Startup ────────────────────────────────────────────────────────────────
+
+	pi.on("session_start", async (_event, ctx) => {
+		updateStatus(ctx);
+
+		// Proactive check: macOS multi-page PDF support
+		if (process.platform === "darwin" && getConfig().backend === "ollama") {
+			const { spawn } = await import("node:child_process");
+			const hasPdftoppm = await new Promise<boolean>((resolve) => {
+				const child = spawn("pdftoppm", ["-v"], { stdio: "ignore" });
+				child.on("close", (code) => resolve(code === 0));
+				child.on("error", () => resolve(false));
+			});
+			if (!hasPdftoppm) {
+				ctx.ui.notify(
+					"💡 Multi-page PDF via Ollama needs pdftoppm: brew install poppler",
+					"warning",
+				);
+			}
+		}
+	});
+
+	console.log(
+		"[pi-ocr] Loaded — /ocr (file or settings), tool: pi_ocr, default: mineru",
+	);
 }
