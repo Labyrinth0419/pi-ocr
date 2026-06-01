@@ -421,88 +421,86 @@ export default function ocrExtension(pi: ExtensionAPI) {
 
 		let settingsListRef: SettingsList | null = null;
 
-		await new Promise<void>((resolve) => {
-			ctx.ui.custom((tui, theme, _kb, done) => {
-				const settingsList = new SettingsList(
-					items,
-					8, // max visible items
-					getSettingsListTheme(),
-					(id, newValue) => {
-						// onChange — save immediately
-						switch (id) {
-							case "backend": {
-								const backend = BACKENDS.includes(newValue as Backend)
-									? (newValue as Backend)
-									: "ollama";
-								saveOcrConfig({ backend });
-								updateStatus(ctx);
-								// Show hints when switching
-								if (backend === "mineru-pro") {
-									ctx.ui.notify(
-										"☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages.\nToken → ~/.pi/agent/settings.json → piOcr.mineruToken\nGet one at https://mineru.net/apiManage",
-										"info",
-									);
-								} else if (backend === "mineru") {
-									ctx.ui.notify(
-										"☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
-											(config.mineruSplitPdf
-												? "ON"
-												: "OFF — enable in settings") +
-											".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
-										"info",
-									);
-								} else if (backend === "tesseract") {
-									ctx.ui.notify(
-										"🔤 Tesseract: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux). ~30MB, CPU-only.",
-										"warning",
-									);
-								} else if (backend === "pix2text") {
-									ctx.ui.notify(
-										"🐍 Pix2Text: needs `pip install pix2text`",
-										"warning",
-									);
-								}
-								break;
+		await ctx.ui.custom((tui, theme, _kb, done) => {
+			const settingsList = new SettingsList(
+				items,
+				8, // max visible items
+				getSettingsListTheme(),
+				(id, newValue) => {
+					// onChange — save immediately
+					switch (id) {
+						case "backend": {
+							const backend = BACKENDS.includes(newValue as Backend)
+								? (newValue as Backend)
+								: "ollama";
+							saveOcrConfig({ backend });
+							updateStatus(ctx);
+							// Show hints when switching
+							if (backend === "mineru-pro") {
+								ctx.ui.notify(
+									"☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages.\nToken → ~/.pi/agent/settings.json → piOcr.mineruToken\nGet one at https://mineru.net/apiManage",
+									"info",
+								);
+							} else if (backend === "mineru") {
+								ctx.ui.notify(
+									"☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
+										(config.mineruSplitPdf
+											? "ON"
+											: "OFF — enable in settings") +
+										".\nLarge files? Compress at https://ilovepdf.com/compress_pdf",
+									"info",
+								);
+							} else if (backend === "tesseract") {
+								ctx.ui.notify(
+									"🔤 Tesseract: `brew install tesseract` (macOS) or `sudo apt install tesseract-ocr` (Linux). ~30MB, CPU-only.",
+									"warning",
+								);
+							} else if (backend === "pix2text") {
+								ctx.ui.notify(
+									"🐍 Pix2Text: needs `pip install pix2text`",
+									"warning",
+								);
 							}
-							case "mineruSplitPdf":
-								saveOcrConfig({ mineruSplitPdf: newValue === "ON" });
-								break;
+							break;
 						}
-					},
-					() => done(undefined), // onCancel
-				);
+						case "mineruSplitPdf":
+							saveOcrConfig({ mineruSplitPdf: newValue === "ON" });
+							break;
+					}
+				},
+				() => done(undefined), // onCancel
+			);
 
-				settingsListRef = settingsList;
+			settingsListRef = settingsList;
 
-				const container = new Container();
-				container.addChild(
-					new Text(theme.fg("accent", theme.bold("OCR Settings")), 1, 0),
-				);
-				container.addChild(settingsList);
-				container.addChild(
-					new Text(
-						theme.fg(
-							"dim",
-							"↑↓ navigate • ← → toggle • enter select • esc close",
-						),
-						1,
-						0,
+			const container = new Container();
+			container.addChild(
+				new Text(theme.fg("accent", theme.bold("OCR Settings")), 1, 0),
+			);
+			container.addChild(settingsList);
+			container.addChild(
+				new Text(
+					theme.fg(
+						"dim",
+						"↑↓ navigate • ← → toggle • enter select • esc close",
 					),
-				);
+					1,
+					0,
+				),
+			);
 
-				return {
-					render(width: number) {
-						return container.render(width);
-					},
-					invalidate() {
-						container.invalidate();
-					},
-					handleInput(data: string) {
-						settingsList.handleInput(data);
-						tui.requestRender();
-					},
-				};
-			});
+			return {
+				render(width: number) {
+					return container.render(width);
+				},
+				invalidate() {
+					container.invalidate();
+				},
+				handleInput(data: string) {
+					settingsList.handleInput(data);
+					tui.requestRender();
+				},
+			};
 		});
 	}
 
@@ -538,7 +536,10 @@ export default function ocrExtension(pi: ExtensionAPI) {
 		};
 
 		// Notifications to fire AFTER component is dismissed (avoid modal-in-modal)
-		const pendingNotify: Array<{ msg: string; level: "info" | "error" | "warning" }> = [];
+		const pendingNotify: Array<{
+			msg: string;
+			level: "info" | "error" | "warning";
+		}> = [];
 
 		const theme = ctx.ui.theme;
 
@@ -558,7 +559,6 @@ export default function ocrExtension(pi: ExtensionAPI) {
 
 		// Fire pending notifications and call onDone
 		function finalize(selected: string | undefined) {
-			// Schedule notifications for after dismissal
 			for (const n of pendingNotify) {
 				ctx.ui.notify(n.msg, n.level);
 			}
@@ -609,13 +609,25 @@ export default function ocrExtension(pi: ExtensionAPI) {
 					const add = (s: string) => lines.push(s);
 					add(theme.fg("accent", "─".repeat(width)));
 					add("");
-					add(theme.fg("warning", ` Model "${state.selectedModel}" is not pulled locally.`));
+					add(
+						theme.fg(
+							"warning",
+							` Model "${state.selectedModel}" is not pulled locally.`,
+						),
+					);
 					add("");
-					add(theme.fg("text", ` Pull it now? (ollama pull ${state.selectedModel})`));
+					add(
+						theme.fg(
+							"text",
+							` Pull it now? (ollama pull ${state.selectedModel})`,
+						),
+					);
 					add("");
 					const yesStyle = state.confirmYes ? theme.fg("accent", ">") : " ";
 					const noStyle = !state.confirmYes ? theme.fg("accent", ">") : " ";
-					add(`  ${yesStyle} ${state.confirmYes ? theme.fg("accent", "Yes") : theme.fg("muted", "Yes")}  ${noStyle} ${!state.confirmYes ? theme.fg("accent", "No") : theme.fg("muted", "No")}`);
+					add(
+						`  ${yesStyle} ${state.confirmYes ? theme.fg("accent", "Yes") : theme.fg("muted", "Yes")}  ${noStyle} ${!state.confirmYes ? theme.fg("accent", "No") : theme.fg("muted", "No")}`,
+					);
 					add("");
 					add(theme.fg("dim", " ← → toggle · Enter confirm · Esc cancel"));
 					add(theme.fg("accent", "─".repeat(width)));
@@ -681,13 +693,19 @@ export default function ocrExtension(pi: ExtensionAPI) {
 					}
 					if (matchesKey(data, Key.enter)) {
 						if (state.confirmYes) {
-							pendingNotify.push({ msg: `Pulling ${state.selectedModel}…`, level: "info" });
+							pendingNotify.push({
+								msg: `Pulling ${state.selectedModel}…`,
+								level: "info",
+							});
 							ollamaPullModel(state.selectedModel)
 								.then(() => {
 									ctx.ui.notify(`${state.selectedModel} ready`, "info");
 								})
 								.catch((e: any) => {
-									ctx.ui.notify(`Pull failed: ${e.message}`.slice(0, 200), "error");
+									ctx.ui.notify(
+										`Pull failed: ${e.message}`.slice(0, 200),
+										"error",
+									);
 								});
 							finalize(state.selectedModel);
 						} else {
