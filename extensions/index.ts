@@ -256,6 +256,11 @@ export default function ocrExtension(pi: ExtensionAPI) {
   async function showOcrSettings(ctx: ExtensionContext) {
     const config = getConfig();
 
+    // Build token info line
+    const tokenLabel = config.mineruToken
+      ? `●●● configured (${config.mineruToken.slice(-6)})`
+      : "not set — save to: ~/.pi/agent/settings.json → piOcr.mineruToken";
+
     const items: SettingItem[] = [
       {
         id: "backend",
@@ -274,17 +279,8 @@ export default function ocrExtension(pi: ExtensionAPI) {
       {
         id: "mineruToken",
         label: "MinerU Pro Token",
-        description: "API token from mineru.net/apiManage (enables ≤200MB, ≤200 pages)",
-        currentValue: config.mineruToken ? "●●● configured" : "not set",
-        submenu: (_currentValue, done) => {
-          return createTokenInput(config.mineruToken || "", ctx, (token) => {
-            if (token !== undefined) {
-              saveOcrConfig({ mineruToken: token || undefined });
-              settingsListRef?.updateValue("mineruToken", token ? "●●● configured" : "not set");
-            }
-            done(token);
-          });
-        },
+        description: tokenLabel,
+        currentValue: config.mineruToken ? "configured" : "not set",
       },
       {
         id: "model",
@@ -297,7 +293,6 @@ export default function ocrExtension(pi: ExtensionAPI) {
               saveOcrConfig({ model: selected });
               process.env.OCR_MODEL = selected;
               updateStatus(ctx);
-              // Update the SettingsList item value in-place
               settingsListRef?.updateValue("model", selected);
             }
             done(selected);
@@ -323,7 +318,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
                 updateStatus(ctx);
                 // Show hints when switching
                 if (backend === "mineru-pro") {
-                ctx.ui.notify("☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages. Requires API token from https://mineru.net/apiManage", "info");
+                ctx.ui.notify("☁️ MinerU Pro: vlm model, ≤200MB, ≤200 pages.\nToken → ~/.pi/agent/settings.json → piOcr.mineruToken\nGet one at https://mineru.net/apiManage", "info");
               } else if (backend === "mineru") {
                   ctx.ui.notify(
                     "☁️ MinerU: free for ≤10MB & ≤20 pages. Auto-split " +
@@ -422,28 +417,6 @@ export default function ocrExtension(pi: ExtensionAPI) {
       render(width: number) { return container.render(width); },
       invalidate() { container.invalidate(); },
       handleInput(data: string) { selectList.handleInput(data); },
-    };
-  }
-
-  function createTokenInput(
-    currentToken: string,
-    ctx: ExtensionContext,
-    onDone: (token: string | undefined) => void,
-  ) {
-    const masked = currentToken ? currentToken.slice(0, 10) + "…" + currentToken.slice(-6) : "";
-
-    // Non-interactive component — just signals the parent to open an input dialog
-    setTimeout(async () => {
-      const newToken = await ctx.ui.input(
-        currentToken ? `Token: ${masked}\nPaste new token (or leave blank to clear):` : "Paste MinerU Pro token from mineru.net/apiManage:",
-        currentToken,
-      );
-      onDone(newToken?.trim() || undefined);
-    }, 100);
-
-    return {
-      render(_width: number) { return ["Opening token input…"]; },
-      invalidate() {},
     };
   }
 
