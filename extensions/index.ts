@@ -747,7 +747,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 	) {
 		const theme = ctx.ui.theme;
 		const input = new Input();
-		input.setValue(currentToken);
+		// Leave input blank so user can paste new token directly — current token shown above as masked
 
 		return {
 			render(width: number) {
@@ -766,7 +766,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 					add(theme.fg("muted", ` Current: ${masked}`));
 					add("");
 				}
-				add(theme.fg("text", " Paste new token (leave blank to clear):"));
+				add(theme.fg("text", " Paste new token:"));
 				add("");
 				for (const line of input.render(width - 4)) {
 					add(`  ${line}`);
