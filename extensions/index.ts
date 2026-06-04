@@ -257,7 +257,7 @@ const ocrTool = defineTool({
 			}
 
 			const totalChars = result.text.length;
-			const tooLarge = totalChars > 5000;
+			const tooLarge = totalChars > 2000;
 
 			let outputFile: string | undefined;
 			let outputMode: "inline" | "file";

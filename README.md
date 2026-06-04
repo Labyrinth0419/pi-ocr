@@ -19,6 +19,8 @@ pi install npm:pi-ocr
 
 **That's all.** MinerU (free cloud API) is the default — zero config.
 
+The `pi_ocr` tool takes only a file `path`. Backend, model, and task are configured by the user via `/ocr` settings — the AI doesn't need to manage them.
+
 ---
 
 ## Backends
@@ -95,25 +97,33 @@ First run downloads ONNX models (~50MB).
 
 ---
 
+## Settings
+
+Open with `/ocr` (no args).
+
+| Setting | Description |
+|---|---|
+| OCR Backend | Switch between MinerU, Ollama, Pix2Text, Tesseract |
+| MinerU: Split PDF >20 pages | Auto-split large PDFs into free-tier chunks |
+| MinerU Pro Token | API token from mineru.net/apiManage |
+| Ollama Model | Vision model (glm-ocr, minicpm-v, etc.) |
+| Clear OCR temp files | Remove cached OCR output from /tmp |
+
+---
+
+## Output Behavior
+
+Results ≤2000 chars are returned inline in the tool response. Longer results are written to a temp file (`/tmp/pi-ocr-*.md`); the tool response includes the file path for the AI to read.
+
+---
+
 ## Commands
 
 | Command | |
 |---|---|
-| `/ocr` | Open settings (backend, model, split toggle) |
-| `/ocr <file> [task]` | OCR a file |
-| `/ocr <file> formula` | Math LaTeX output |
-
-### Tasks
-
-| Task | Output |
-|---|---|
-| `auto` (default) | Markdown + LaTeX |
-| `text` | Plain Markdown |
-| `formula` | LaTeX only |
-| `table` | Markdown tables |
-| `figure` | Description |
-
----
+| `/ocr` | Open settings (backend, model, split toggle, clear cache) |
+| `/ocr <file>` | OCR a file |
+| `/ocr <file> formula` | Math LaTeX output (Ollama backend) |
 
 ## Troubleshooting
 
