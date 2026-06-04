@@ -273,19 +273,22 @@ const ocrTool = defineTool({
 			}
 
 			const totalChars = result.text.length;
-			const truncated = totalChars > 5000;
+			const tooLarge = totalChars > 5000;
 
 			let outputFile: string | undefined;
 			let preview: string;
+			let outputMode: "inline" | "file";
 
-			if (truncated) {
+			if (tooLarge) {
 				// Write full output to temp file so LLM can read complete result
 				const ext = extname(filePath).toLowerCase() === ".pdf" ? ".md" : ".txt";
 				outputFile = join(tmpdir(), `pi-ocr-${Date.now()}${ext}`);
 				writeFileSync(outputFile, result.text, "utf8");
 				preview = result.text.slice(0, 2000);
+				outputMode = "file";
 			} else {
 				preview = result.text;
+				outputMode = "inline";
 			}
 
 			const header = [
@@ -298,18 +301,15 @@ const ocrTool = defineTool({
 			if (result.details && typeof result.details.pages === "number") {
 				header.push(`**Pages:** ${result.details.pages}`);
 			}
-			if (truncated && outputFile) {
-				header.push(`**Status:** ⚠️ truncated — full output saved to file`);
-				header.push(``);
+			if (outputMode === "file" && outputFile) {
 				header.push(
-					`📄 **Full output:** \`${outputFile}\` (${totalChars.toLocaleString()} chars)`,
+					`**Output:** file → \`${outputFile}\` (${totalChars.toLocaleString()} chars)`,
 				);
-				header.push(`> Use the read tool to retrieve the complete OCR output.`);
 			} else {
-				header.push(`**Status:** ✅ complete`);
+				header.push(`**Output:** inline`);
 			}
 			header.push(``);
-			if (truncated) {
+			if (outputMode === "file") {
 				header.push(`---`);
 				header.push(`### Preview (first 2,000 chars)`);
 				header.push(``);
@@ -327,7 +327,8 @@ const ocrTool = defineTool({
 					task: resolvedTask,
 					path: filePath,
 					fullText: result.text,
-					truncated,
+					truncated: tooLarge,
+					outputMode,
 					backend: config.backend,
 					...(outputFile ? { outputFile } : {}),
 				},
