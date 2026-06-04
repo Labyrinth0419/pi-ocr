@@ -42,7 +42,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, extname, dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 import type { Backend, Task, OcrConfig } from "./types";
 import { TASKS, BACKENDS } from "./types";
@@ -141,7 +141,8 @@ const ocrSchema = Type.Object({
 	model: Type.Optional(
 		Type.String({
 			description:
-				"Ollama model to use for OCR. Defaults to 'glm-ocr'. You can use any Ollama vision model, e.g. 'glm-ocr:q8_0' for the 8-bit quantized version, 'llama3.2-vision', 'minicpm-v', etc.",
+				"Ollama model to use for OCR. ONLY applies when the active backend is Ollama — silently ignored by MinerU, Pix2Text, and Tesseract. " +
+				"Defaults to 'glm-ocr'. You can use any Ollama vision model, e.g. 'glm-ocr:q8_0' for the 8-bit quantized version, 'llama3.2-vision', 'minicpm-v', etc.",
 		}),
 	),
 });
@@ -150,15 +151,18 @@ const ocrTool = defineTool({
 	name: "pi_ocr",
 	label: "Minimodel OCR",
 	description:
-		"Extract text, math formulas (LaTeX), and tables from images or PDFs using local Ollama vision models. " +
+		"Extract text, math formulas (LaTeX), and tables from images or PDFs. " +
+		"Multi-backend: MinerU (free cloud, ≤10MB, ≤20pp), MinerU Pro (vlm, token), Ollama (local GPU), Pix2Text (local Python), Tesseract (classic). " +
 		"Use this when you need to read text from an image or PDF, especially mathematical formulas that need LaTeX output. " +
 		"This is the tool to use when working with non-vision LLMs like DeepSeek that cannot process images directly.",
 	promptSnippet:
-		"Extract text/formulas/tables from images and PDFs using local Ollama OCR",
+		"Extract text/formulas/tables from images and PDFs (MinerU/Ollama/Pix2Text/Tesseract)",
 	promptGuidelines: [
 		"When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
 		"For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
 		"Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
+		"IMPORTANT: The `model` parameter ONLY applies to the Ollama backend. It is silently ignored by MinerU, Pix2Text, and Tesseract.",
+		"IMPORTANT: Check the **Backend:** field in the OCR result to know which backend actually processed the request.",
 	],
 	parameters: ocrSchema,
 	async execute(_toolCallId, params, signal, onUpdate, _ctx) {
@@ -268,15 +272,54 @@ const ocrTool = defineTool({
 					throw new Error(`Unknown backend "${config.backend}"`);
 			}
 
-			const preview =
-				result.text.length > 5000
-					? result.text.slice(0, 5000) + "\n\n… (truncated)"
-					: result.text;
+			const totalChars = result.text.length;
+			const truncated = totalChars > 5000;
+
+			let outputFile: string | undefined;
+			let preview: string;
+
+			if (truncated) {
+				// Write full output to temp file so LLM can read complete result
+				const ext = extname(filePath).toLowerCase() === ".pdf" ? ".md" : ".txt";
+				outputFile = join(tmpdir(), `pi-ocr-${Date.now()}${ext}`);
+				writeFileSync(outputFile, result.text, "utf8");
+				preview = result.text.slice(0, 2000);
+			} else {
+				preview = result.text;
+			}
+
+			const header = [
+				`## OCR Result (${resolvedTask})`,
+				``,
+				`**File:** \`${basename(filePath)}\``,
+				`**Backend:** ${config.backend}`,
+				`**Chars:** ${totalChars.toLocaleString()}`,
+			];
+			if (result.details && typeof result.details.pages === "number") {
+				header.push(`**Pages:** ${result.details.pages}`);
+			}
+			if (truncated && outputFile) {
+				header.push(`**Status:** ⚠️ truncated — full output saved to file`);
+				header.push(``);
+				header.push(
+					`📄 **Full output:** \`${outputFile}\` (${totalChars.toLocaleString()} chars)`,
+				);
+				header.push(`> Use the read tool to retrieve the complete OCR output.`);
+			} else {
+				header.push(`**Status:** ✅ complete`);
+			}
+			header.push(``);
+			if (truncated) {
+				header.push(`---`);
+				header.push(`### Preview (first 2,000 chars)`);
+				header.push(``);
+			}
+
 			return {
 				content: [
 					{
 						type: "text",
-						text: `## OCR Result (${resolvedTask})\n\n**File:** \`${basename(filePath)}\`\n**Backend:** ${config.backend}\n\n${preview}`,
+						text: [...header, preview].join("\n"),
 					},
 				],
 				details: {
@@ -284,8 +327,9 @@ const ocrTool = defineTool({
 					task: resolvedTask,
 					path: filePath,
 					fullText: result.text,
-					truncated: result.text.length > 5000,
+					truncated,
 					backend: config.backend,
+					...(outputFile ? { outputFile } : {}),
 				},
 			};
 		} catch (e: any) {
