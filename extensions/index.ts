@@ -161,8 +161,8 @@ const ocrTool = defineTool({
 		"When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
 		"For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
 		"Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
-		"IMPORTANT: The `model` parameter ONLY applies to the Ollama backend. It is silently ignored by MinerU, Pix2Text, and Tesseract.",
-		"IMPORTANT: Check the **Backend:** field in the OCR result to know which backend actually processed the request.",
+		"The `model` parameter only applies to the Ollama backend — it is ignored by MinerU, Pix2Text, and Tesseract.",
+		"The OCR result will include a **Backend:** field showing which backend processed the request.",
 	],
 	parameters: ocrSchema,
 	async execute(_toolCallId, params, signal, onUpdate, _ctx) {
