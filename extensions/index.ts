@@ -45,7 +45,7 @@ import { basename, extname, dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
 import type { Backend, Task, OcrConfig } from "./types";
-import { TASKS, BACKENDS } from "./types";
+import { BACKENDS } from "./types";
 import {
 	isImage,
 	isPdf,
@@ -132,19 +132,6 @@ const ocrSchema = Type.Object({
 		description:
 			"Absolute or relative path to the image or PDF file to OCR. Supported formats: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.",
 	}),
-	task: Type.Optional(
-		Type.String({
-			description:
-				'OCR task type. "text" for Markdown text, "formula" for LaTeX math, "table" for Markdown tables, "figure" for description, "auto" for full document OCR (default).',
-		}),
-	),
-	model: Type.Optional(
-		Type.String({
-			description:
-				"Ollama model to use for OCR. ONLY applies when the active backend is Ollama — silently ignored by MinerU, Pix2Text, and Tesseract. " +
-				"Defaults to 'glm-ocr'. You can use any Ollama vision model, e.g. 'glm-ocr:q8_0' for the 8-bit quantized version, 'llama3.2-vision', 'minicpm-v', etc.",
-		}),
-	),
 });
 
 const ocrTool = defineTool({
@@ -153,31 +140,21 @@ const ocrTool = defineTool({
 	description:
 		"Extract text, math formulas (LaTeX), and tables from images or PDFs. " +
 		"Multi-backend: MinerU (free cloud, ≤10MB, ≤20pp), MinerU Pro (vlm, token), Ollama (local GPU), Pix2Text (local Python), Tesseract (classic). " +
-		"Use this when you need to read text from an image or PDF, especially mathematical formulas that need LaTeX output. " +
-		"This is the tool to use when working with non-vision LLMs like DeepSeek that cannot process images directly.",
-	promptSnippet:
-		"Extract text/formulas/tables from images and PDFs (MinerU/Ollama/Pix2Text/Tesseract)",
+		"Use this when the user asks about the content of an image or PDF. " +
+		"Works with non-vision LLMs like DeepSeek that cannot process images directly. " +
+		"Backend and model are configured by the user via /ocr.",
+	promptSnippet: "Extract text/formulas/tables from images and PDFs",
 	promptGuidelines: [
 		"When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
-		"For mathematical documents, use pi_ocr with task='formula' or task='auto' to get LaTeX output.",
-		"Use pi_ocr with task='auto' for general document OCR to extract all text, formulas, tables, and figures.",
-		"The `model` parameter only applies to the Ollama backend — it is ignored by MinerU, Pix2Text, and Tesseract.",
-		"The OCR result will include a **Backend:** field showing which backend processed the request.",
+		"Only path is needed — the backend and model are managed by the user via /ocr settings.",
+		"The OCR result includes a **Backend:** field telling you which backend processed the request.",
 	],
 	parameters: ocrSchema,
 	async execute(_toolCallId, params, signal, onUpdate, _ctx) {
-		const {
-			path: filePath,
-			task = "auto",
-			model: modelOverride,
-		} = params as {
-			path: string;
-			task?: string;
-			model?: string;
-		};
-		const resolvedTask = (TASKS.includes(task as Task) ? task : "auto") as Task;
+		const { path: filePath } = params as { path: string };
+		const resolvedTask: Task = "auto";
 		const config = getConfig();
-		const resolvedModel = modelOverride || config.model;
+		const resolvedModel = config.model;
 
 		if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
 		if (!isImage(filePath) && !isPdf(filePath)) {
@@ -871,8 +848,4 @@ export default function ocrExtension(pi: ExtensionAPI) {
 			}
 		}
 	});
-
-	console.log(
-		"[pi-ocr] Loaded — /ocr (file or settings), tool: pi_ocr, default: mineru",
-	);
 }
