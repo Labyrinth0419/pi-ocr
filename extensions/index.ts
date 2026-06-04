@@ -40,7 +40,14 @@ import {
 	type SelectItem,
 	SelectList,
 } from "@earendil-works/pi-tui";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+	existsSync,
+	readFileSync,
+	writeFileSync,
+	mkdirSync,
+	readdirSync,
+	unlinkSync,
+} from "node:fs";
 import { basename, extname, dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
@@ -287,9 +294,10 @@ const ocrTool = defineTool({
 				content: [
 					{
 						type: "text",
-						text: outputMode === "file"
-							? header.join("\n")
-							: [...header, result.text].join("\n"),
+						text:
+							outputMode === "file"
+								? header.join("\n")
+								: [...header, result.text].join("\n"),
 					},
 				],
 				details: {
@@ -441,6 +449,17 @@ export default function ocrExtension(pi: ExtensionAPI) {
 							settingsListRef?.updateValue("model", selected);
 						}
 						done(selected);
+					});
+				},
+			},
+			{
+				id: "clearCache",
+				label: "Clear OCR temp files",
+				description: clearCacheLabel(),
+				currentValue: "",
+				submenu: (_currentValue, done) => {
+					return createClearCacheDialog(ctx, () => {
+						done(undefined);
 					});
 				},
 			},
@@ -803,6 +822,144 @@ export default function ocrExtension(pi: ExtensionAPI) {
 					return;
 				}
 				input.handleInput(data);
+			},
+		};
+	}
+
+	// ── Cache cleanup ──────────────────────────────────────────────────────────
+
+	/** Only scan tmpdir(), only match pi-ocr-*.md / pi-ocr-*.txt, only unlink files. */
+	function clearCacheLabel(): string {
+		try {
+			const files = readdirSync(tmpdir()).filter(
+				(f) =>
+					f.startsWith("pi-ocr-") && (f.endsWith(".md") || f.endsWith(".txt")),
+			);
+			return files.length === 0
+				? "no temp files"
+				: `${files.length} file${files.length > 1 ? "s" : ""}`;
+		} catch {
+			return "unable to scan";
+		}
+	}
+
+	function createClearCacheDialog(
+		ctx: ExtensionContext,
+		onCleared: () => void,
+	) {
+		const theme = ctx.ui.theme;
+		let confirmed = false;
+
+		function countFiles(): { files: string[]; totalSize: number } {
+			try {
+				const dir = tmpdir();
+				const files = readdirSync(dir).filter(
+					(f) =>
+						f.startsWith("pi-ocr-") &&
+						(f.endsWith(".md") || f.endsWith(".txt")),
+				);
+				let totalSize = 0;
+				const validFiles: string[] = [];
+				for (const f of files) {
+					try {
+						const full = join(dir, f);
+						const s = readFileSync(full);
+						totalSize += s.length;
+						validFiles.push(f);
+					} catch {
+						/* skip stale/unreadable */
+					}
+				}
+				return { files: validFiles, totalSize };
+			} catch {
+				return { files: [], totalSize: 0 };
+			}
+		}
+
+		function doClear() {
+			const dir = tmpdir();
+			let removed = 0;
+			try {
+				for (const f of readdirSync(dir)) {
+					if (!f.startsWith("pi-ocr-")) continue;
+					if (!f.endsWith(".md") && !f.endsWith(".txt")) continue;
+					try {
+						unlinkSync(join(dir, f));
+						removed++;
+					} catch {
+						/* skip locked files */
+					}
+				}
+			} catch {
+				/* dir gone */
+			}
+			ctx.ui.notify(
+				`Cleared ${removed} OCR temp file${removed !== 1 ? "s" : ""}`,
+				"info",
+			);
+			onCleared();
+		}
+
+		return {
+			render(width: number) {
+				const { files, totalSize } = countFiles();
+				const sizeStr =
+					totalSize > 1024 * 1024
+						? `${(totalSize / 1024 / 1024).toFixed(1)} MB`
+						: totalSize > 1024
+							? `${(totalSize / 1024).toFixed(1)} KB`
+							: `${totalSize} B`;
+
+				const lines: string[] = [];
+				const add = (s: string) => lines.push(s);
+				add(theme.fg("accent", "─".repeat(width)));
+				add("");
+				if (files.length === 0) {
+					add(theme.fg("muted", " No OCR temp files found."));
+				} else {
+					add(
+						theme.fg(
+							"text",
+							` ${files.length} OCR temp file${files.length > 1 ? "s" : ""} (${sizeStr})`,
+						),
+					);
+					add("");
+					add(
+						theme.fg(
+							"text",
+							" Delete these files? They contain cached OCR output.",
+						),
+					);
+					add("");
+					const yesStyle = confirmed ? theme.fg("accent", ">") : " ";
+					const noStyle = !confirmed ? theme.fg("accent", ">") : " ";
+					add(
+						`  ${yesStyle} ${confirmed ? theme.fg("accent", "Yes") : theme.fg("muted", "Yes")}  ${noStyle} ${!confirmed ? theme.fg("accent", "No") : theme.fg("muted", "No")}`,
+					);
+				}
+				add("");
+				add(theme.fg("dim", " Enter to confirm · Esc to cancel"));
+				add(theme.fg("accent", "─".repeat(width)));
+				return lines;
+			},
+			invalidate() {},
+			handleInput(data: string) {
+				if (matchesKey(data, Key.escape)) {
+					onCleared(); // close without clearing
+					return;
+				}
+				if (matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
+					confirmed = !confirmed;
+					return;
+				}
+				if (matchesKey(data, Key.enter)) {
+					if (confirmed) {
+						doClear();
+					} else {
+						onCleared(); // close without clearing
+					}
+					return;
+				}
 			},
 		};
 	}
