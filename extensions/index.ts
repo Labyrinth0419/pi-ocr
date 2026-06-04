@@ -253,18 +253,14 @@ const ocrTool = defineTool({
 			const tooLarge = totalChars > 5000;
 
 			let outputFile: string | undefined;
-			let preview: string;
 			let outputMode: "inline" | "file";
 
 			if (tooLarge) {
-				// Write full output to temp file so LLM can read complete result
 				const ext = extname(filePath).toLowerCase() === ".pdf" ? ".md" : ".txt";
 				outputFile = join(tmpdir(), `pi-ocr-${Date.now()}${ext}`);
 				writeFileSync(outputFile, result.text, "utf8");
-				preview = result.text.slice(0, 2000);
 				outputMode = "file";
 			} else {
-				preview = result.text;
 				outputMode = "inline";
 			}
 
@@ -284,11 +280,6 @@ const ocrTool = defineTool({
 				);
 			} else {
 				header.push(`**Output:** inline`);
-			}
-			header.push(``);
-			if (outputMode === "file") {
-				header.push(`---`);
-				header.push(`### Preview (first 2,000 chars)`);
 				header.push(``);
 			}
 
@@ -296,7 +287,9 @@ const ocrTool = defineTool({
 				content: [
 					{
 						type: "text",
-						text: [...header, preview].join("\n"),
+						text: outputMode === "file"
+							? header.join("\n")
+							: [...header, result.text].join("\n"),
 					},
 				],
 				details: {
