@@ -51,7 +51,7 @@ import {
 import { basename, extname, dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
-import type { Backend, Task, OcrConfig } from "./types";
+import type { Backend, OcrConfig } from "./types";
 import { BACKENDS } from "./types";
 import {
 	isImage,
@@ -159,7 +159,6 @@ const ocrTool = defineTool({
 	parameters: ocrSchema,
 	async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 		const { path: filePath } = params as { path: string };
-		const resolvedTask: Task = "auto";
 		const config = getConfig();
 		const resolvedModel = config.model;
 
@@ -181,7 +180,7 @@ const ocrTool = defineTool({
 			content: [
 				{
 					type: "text",
-					text: `🔍 OCR ${basename(filePath)} via ${backendLabel} (${resolvedTask})…`,
+					text: `🔍 OCR ${basename(filePath)} via ${backendLabel}…`,
 				},
 			],
 			details: {},
@@ -197,7 +196,6 @@ const ocrTool = defineTool({
 				case "ollama":
 					result = await ollamaOcr(
 						filePath,
-						resolvedTask,
 						config.ollamaHost,
 						resolvedModel,
 						signal,
@@ -214,7 +212,6 @@ const ocrTool = defineTool({
 					}
 					result = await mineruOcr(
 						filePath,
-						resolvedTask,
 						config.mineruSplitPdf,
 						signal,
 						onProgress,
@@ -227,30 +224,14 @@ const ocrTool = defineTool({
 						throw new Error(
 							"MinerU Pro requires a token. Get one at https://mineru.net/apiManage, then set it with /ocr settings.",
 						);
-					result = await mineruProOcr(
-						filePath,
-						resolvedTask,
-						token,
-						signal,
-						onProgress,
-					);
+					result = await mineruProOcr(filePath, token, signal, onProgress);
 					break;
 				}
 				case "tesseract":
-					result = await tesseractOcr(
-						filePath,
-						resolvedTask,
-						signal,
-						onProgress,
-					);
+					result = await tesseractOcr(filePath, signal, onProgress);
 					break;
 				case "pix2text":
-					result = await pix2textOcr(
-						filePath,
-						resolvedTask,
-						signal,
-						onProgress,
-					);
+					result = await pix2textOcr(filePath, signal, onProgress);
 					break;
 				default:
 					throw new Error(`Unknown backend "${config.backend}"`);
@@ -272,7 +253,7 @@ const ocrTool = defineTool({
 			}
 
 			const header = [
-				`## OCR Result (${resolvedTask})`,
+				`## OCR Result`,
 				``,
 				`**File:** \`${basename(filePath)}\``,
 				`**Backend:** ${config.backend}`,
@@ -302,7 +283,7 @@ const ocrTool = defineTool({
 				],
 				details: {
 					...result.details,
-					task: resolvedTask,
+					task: "auto",
 					path: filePath,
 					fullText: result.text,
 					truncated: tooLarge,
@@ -354,10 +335,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 			}
 
 			// Args → OCR a file
-			const parts = trimmed.split(/\s+/);
-			const filePath = parts[0];
-			const task = parts[1] || "auto";
-			const model = parts[2] || undefined;
+			const filePath = trimmed.trim();
 
 			if (!existsSync(filePath)) {
 				ctx.ui.notify(`File not found: ${filePath}`, "error");
@@ -367,7 +345,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 			try {
 				const result = await ocrTool.execute(
 					"",
-					{ path: filePath, task, model },
+					{ path: filePath },
 					undefined as any,
 					undefined,
 					ctx,

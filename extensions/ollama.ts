@@ -128,10 +128,10 @@ async function convertPdfPage(pdfPath: string, pageIndex: number, outPath: strin
 // ── Ollama API call ──────────────────────────────────────────────────────────
 
 async function callOllama(
-  host: string, imagePath: string, task: Task, signal: AbortSignal | undefined, model: string,
+  host: string, imagePath: string, signal: AbortSignal | undefined, model: string,
 ): Promise<string> {
   const imageBase64 = readFileSync(imagePath).toString("base64");
-  const prompt = buildPrompt(task);
+  const prompt = buildPrompt("auto");
 
   const body = JSON.stringify({ model, prompt, images: [imageBase64], stream: false });
 
@@ -155,7 +155,7 @@ async function callOllama(
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function ollamaOcr(
-  filePath: string, task: Task, ollamaHost: string, model: string,
+  filePath: string, ollamaHost: string, model: string,
   signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
   let resultText = "";
@@ -187,7 +187,7 @@ export async function ollamaOcr(
         }
 
         onProgress(`🔍 OCR page ${i + 1}/${pageCount}…`);
-        const pageText = await callOllama(ollamaHost, pageOut, task, signal, model);
+        const pageText = await callOllama(ollamaHost, pageOut, signal, model);
         if (!pageText.trim()) {
           pageResults.push(`## Page ${i + 1}\n\n> ⚠️ OCR returned empty result for this page.`);
         } else {
@@ -196,10 +196,10 @@ export async function ollamaOcr(
       }
       resultText = pageResults.join("\n\n");
     } else {
-      resultText = await callOllama(ollamaHost, filePath, task, signal, model);
+      resultText = await callOllama(ollamaHost, filePath, signal, model);
     }
 
-    return { text: resultText, details: { backend: "ollama", model, task } };
+    return { text: resultText, details: { backend: "ollama", model } };
   } finally {
     if (tmpDir) cleanupDir(tmpDir);
   }

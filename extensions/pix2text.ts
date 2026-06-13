@@ -16,7 +16,7 @@
 
 import { spawn } from "node:child_process";
 import { basename } from "node:path";
-import type { Task, OcrResult, OcrProgressCallback } from "./types";
+import type { OcrResult, OcrProgressCallback } from "./types";
 import { isImage, isPdf } from "./ollama";
 
 // ── Embedded Python OCR engine ───────────────────────────────────────────────
@@ -34,7 +34,6 @@ import sys, os, json, io, tempfile
 from pathlib import Path
 
 file_path = sys.argv[1]
-task = sys.argv[2]
 ext = Path(file_path).suffix.lower()
 
 # Suppress noisy library output
@@ -124,100 +123,119 @@ else:
 // ── Subprocess runner with progress streaming ────────────────────────────────
 
 async function execPythonWithProgress(
-  code: string, args: string[], onProgress: OcrProgressCallback,
+	code: string,
+	args: string[],
+	onProgress: OcrProgressCallback,
 ): Promise<{ stdout: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const child = spawn("python3", ["-c", code, ...args], { stdio: ["ignore", "pipe", "pipe"] });
-    const outChunks: Buffer[] = [];
-    let lastPageReported = 0;
+	return new Promise((resolve) => {
+		const child = spawn("python3", ["-c", code, ...args], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const outChunks: Buffer[] = [];
+		let lastPageReported = 0;
 
-    child.stdout.on("data", (d) => outChunks.push(d));
+		child.stdout.on("data", (d) => outChunks.push(d));
 
-    // Buffer for stderr line reassembly across chunk boundaries
-    let stderrBuf = "";
-    child.stderr.on("data", (d) => {
-      stderrBuf += d.toString("utf8");
-      const lines = stderrBuf.split("\n");
-      // Last element may be incomplete — keep it in the buffer
-      stderrBuf = lines.pop() || "";
-      // Parse JSON progress lines, ignore noisy library output
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("{")) continue;
-        try {
-          const p = JSON.parse(trimmed);
-          if (p.status === "page" && p.page && p.total) {
-            // Only report every 5th page or first/last to avoid spam
-            if (p.page !== lastPageReported) {
-              lastPageReported = p.page;
-              onProgress(`📄 Page ${p.page}/${p.total}`);
-            }
-          } else if (p.status === "loading" && p.message) {
-            onProgress(`⏳ ${p.message}`);
-          } else if (p.status === "started" && p.pages) {
-            onProgress(`📄 Processing ${p.pages} page(s) with Pix2Text…`);
-          } else if (p.status === "done") {
-            onProgress(`✅ Pix2Text complete (${p.pages} page(s))`);
-          } else if (p.status === "error") {
-            // Error will be handled by exit code
-          }
-        } catch {
-          // Not JSON — library noise, ignore
-        }
-      }
-    });
+		// Buffer for stderr line reassembly across chunk boundaries
+		let stderrBuf = "";
+		child.stderr.on("data", (d) => {
+			stderrBuf += d.toString("utf8");
+			const lines = stderrBuf.split("\n");
+			// Last element may be incomplete — keep it in the buffer
+			stderrBuf = lines.pop() || "";
+			// Parse JSON progress lines, ignore noisy library output
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (!trimmed.startsWith("{")) continue;
+				try {
+					const p = JSON.parse(trimmed);
+					if (p.status === "page" && p.page && p.total) {
+						// Only report every 5th page or first/last to avoid spam
+						if (p.page !== lastPageReported) {
+							lastPageReported = p.page;
+							onProgress(`📄 Page ${p.page}/${p.total}`);
+						}
+					} else if (p.status === "loading" && p.message) {
+						onProgress(`⏳ ${p.message}`);
+					} else if (p.status === "started" && p.pages) {
+						onProgress(`📄 Processing ${p.pages} page(s) with Pix2Text…`);
+					} else if (p.status === "done") {
+						onProgress(`✅ Pix2Text complete (${p.pages} page(s))`);
+					} else if (p.status === "error") {
+						// Error will be handled by exit code
+					}
+				} catch {
+					// Not JSON — library noise, ignore
+				}
+			}
+		});
 
-    child.on("error", () => resolve({
-      stdout: "",
-      exitCode: 1,
-    }));
+		child.on("error", () =>
+			resolve({
+				stdout: "",
+				exitCode: 1,
+			}),
+		);
 
-    child.on("close", (code) => {
-      // Process any remaining buffered stderr line
-      if (stderrBuf.trim().startsWith("{")) {
-        try {
-          const p = JSON.parse(stderrBuf.trim());
-          if (p.status === "done" && p.pages) {
-            onProgress(`✅ Pix2Text complete (${p.pages} page(s))`);
-          }
-        } catch { /* not valid JSON, ignore */ }
-      }
-      resolve({
-        stdout: Buffer.concat(outChunks).toString("utf8").trim(),
-        exitCode: code ?? 1,
-      });
-    });
-  });
+		child.on("close", (code) => {
+			// Process any remaining buffered stderr line
+			if (stderrBuf.trim().startsWith("{")) {
+				try {
+					const p = JSON.parse(stderrBuf.trim());
+					if (p.status === "done" && p.pages) {
+						onProgress(`✅ Pix2Text complete (${p.pages} page(s))`);
+					}
+				} catch {
+					/* not valid JSON, ignore */
+				}
+			}
+			resolve({
+				stdout: Buffer.concat(outChunks).toString("utf8").trim(),
+				exitCode: code ?? 1,
+			});
+		});
+	});
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function pix2textOcr(
-  filePath: string, task: Task,
-  _signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
+	filePath: string,
+	_signal: AbortSignal | undefined,
+	onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
-  if (!isImage(filePath) && !isPdf(filePath)) {
-    throw new Error(`Unsupported file type: ${basename(filePath)}`);
-  }
+	if (!isImage(filePath) && !isPdf(filePath)) {
+		throw new Error(`Unsupported file type: ${basename(filePath)}`);
+	}
 
-  const { stdout, exitCode } = await execPythonWithProgress(
-    PIX2TEXT_ENGINE, [filePath, task], onProgress,
-  );
+	const { stdout, exitCode } = await execPythonWithProgress(
+		PIX2TEXT_ENGINE,
+		[filePath, "auto"],
+		onProgress,
+	);
 
-  if (exitCode !== 0) {
-    const msg = stdout || "Pix2Text failed";
-    if (msg.includes("ModuleNotFoundError") || msg.includes("No module named")) {
-      throw new Error("Pix2Text not installed. Run:\n  pip install pix2text");
-    }
-    if (msg.includes("table-rec") || msg.includes("pytorch_model")) {
-      throw new Error("Pix2Text model download incomplete. Try:\n  pip install pix2text --upgrade");
-    }
-    throw new Error(msg.slice(0, 1000));
-  }
+	if (exitCode !== 0) {
+		const msg = stdout || "Pix2Text failed";
+		if (
+			msg.includes("ModuleNotFoundError") ||
+			msg.includes("No module named")
+		) {
+			throw new Error("Pix2Text not installed. Run:\n  pip install pix2text");
+		}
+		if (msg.includes("table-rec") || msg.includes("pytorch_model")) {
+			throw new Error(
+				"Pix2Text model download incomplete. Try:\n  pip install pix2text --upgrade",
+			);
+		}
+		throw new Error(msg.slice(0, 1000));
+	}
 
-  if (!stdout || stdout.startsWith("ERROR:")) {
-    return { text: "", details: { backend: "pix2text", task, warning: stdout || "no text detected" } };
-  }
+	if (!stdout || stdout.startsWith("ERROR:")) {
+		return {
+			text: "",
+			details: { backend: "pix2text", warning: stdout || "no text detected" },
+		};
+	}
 
-  return { text: stdout, details: { backend: "pix2text", task } };
+	return { text: stdout, details: { backend: "pix2text" } };
 }

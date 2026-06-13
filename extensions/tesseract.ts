@@ -18,7 +18,7 @@ import { mkdtempSync, readdirSync, unlinkSync, rmdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import type { Task, OcrResult, OcrProgressCallback } from "./types";
+import type { OcrResult, OcrProgressCallback } from "./types";
 import { isImage, isPdf, getPdfPageCount } from "./ollama";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ async function convertPdfPage(pdfPath: string, pageIndex: number, outPath: strin
 
 // ── Tesseract OCR ────────────────────────────────────────────────────────────
 
-async function tesseractImage(imagePath: string, _task: Task): Promise<string> {
+async function tesseractImage(imagePath: string): Promise<string> {
   const { stdout, stderr, code } = await execCapture("tesseract", [
     imagePath, "stdout",
     "-l", "eng+chi_sim",   // English + Chinese simplified
@@ -88,7 +88,7 @@ async function tesseractImage(imagePath: string, _task: Task): Promise<string> {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function tesseractOcr(
-  filePath: string, task: Task,
+  filePath: string,
   signal: AbortSignal | undefined, onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
   let resultText = "";
@@ -113,7 +113,7 @@ export async function tesseractOcr(
         }
 
         onProgress(`📄 Page ${i + 1}/${pageCount}`);
-        const pageText = await tesseractImage(pageOut, task);
+        const pageText = await tesseractImage(pageOut);
         if (!pageText.trim()) {
           pageResults.push(`## Page ${i + 1}\n\n> ⚠️ No text detected`);
         } else {
@@ -122,12 +122,12 @@ export async function tesseractOcr(
       }
       resultText = pageResults.join("\n\n");
     } else if (isImage(filePath)) {
-      resultText = await tesseractImage(filePath, task);
+      resultText = await tesseractImage(filePath);
     } else {
       throw new Error(`Unsupported file type: ${basename(filePath)}`);
     }
 
-    return { text: resultText, details: { backend: "tesseract", task } };
+    return { text: resultText, details: { backend: "tesseract" } };
   } finally {
     if (tmpDir) cleanupDir(tmpDir);
   }
