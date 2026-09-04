@@ -3,38 +3,39 @@
  *
  * API reference: https://mineru.net/apiManage/docs
  *
- * Single file flow (URL mode):
- *   1. POST /api/v4/extract/task → {task_id}
- *   2. Poll GET /api/v4/extract/task/{task_id} → {state, full_zip_url}
- *   3. Download full_zip_url → extract .md
- *
- * Local file flow (batch upload):
+ * Local file flow:
  *   1. POST /api/v4/file-urls/batch → {batch_id, file_urls[]}
  *   2. PUT file to file_urls[0] → auto-submits
- *   3. Poll GET /api/v4/extract-results/batch/{batch_id} → {extract_result[].full_zip_url}
- *   4. Download zip → extract .md
+ *   3. Poll GET /api/v4/extract-results/batch/{batch_id}
+ *   4. Download full_zip_url → extract Markdown
  *
  * Limits: ≤200MB, ≤200 pages, 1000 pages/day high-priority
  */
 
 import {
-	readFileSync,
+	createWriteStream,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
-	createWriteStream,
 } from "node:fs";
+import { execFile, spawn } from "node:child_process";
 import { basename, extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { stat } from "node:fs/promises";
-import { spawn, execFile } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { OcrResult, OcrProgressCallback } from "./types";
+import type { OcrProgressCallback, OcrResult } from "./types";
 
 const BASE_URL = "https://mineru.net/api/v4";
+const POLL_INTERVAL_MS = 5_000;
 
-// ── Auth helper ─────────────────────────────────────────────────────────────
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number) {
+	return AbortSignal.any([
+		...(signal ? [signal] : []),
+		AbortSignal.timeout(timeoutMs),
+	]);
+}
 
 function authHeaders(token: string) {
 	return {
@@ -43,164 +44,166 @@ function authHeaders(token: string) {
 	};
 }
 
-// ── API calls ───────────────────────────────────────────────────────────────
-
 async function apiPost(
 	token: string,
 	url: string,
 	body: Record<string, unknown>,
+	signal: AbortSignal | undefined,
 ) {
 	const resp = await fetch(url, {
 		method: "POST",
 		headers: authHeaders(token),
 		body: JSON.stringify(body),
-		signal: AbortSignal.timeout(30_000),
+		signal: requestSignal(signal, 30_000),
 	});
-	if (!resp.ok)
+	if (!resp.ok) {
 		throw new Error(
 			`MinerU Pro ${resp.status}: ${(await resp.text()).slice(0, 200)}`,
 		);
+	}
+
 	const data = (await resp.json()) as { code: number; msg: string; data: any };
 	if (data.code !== 0) throw new Error(`MinerU Pro: ${data.msg}`);
 	return data.data;
 }
 
-async function apiGet(token: string, url: string): Promise<any> {
+async function apiGet(
+	token: string,
+	url: string,
+	signal: AbortSignal | undefined,
+): Promise<any> {
 	const resp = await fetch(url, {
 		headers: { Authorization: `Bearer ${token}` },
-		signal: AbortSignal.timeout(15_000),
+		signal: requestSignal(signal, 15_000),
 	});
+	if (!resp.ok) {
+		throw new Error(
+			`MinerU Pro poll ${resp.status}: ${(await resp.text()).slice(0, 200)}`,
+		);
+	}
+
 	const data = (await resp.json()) as { code: number; msg: string; data: any };
 	if (data.code !== 0) throw new Error(`MinerU Pro poll: ${data.msg}`);
 	return data.data;
 }
 
-// ── Download zip and extract .md ───────────────────────────────────────────
+function waitForPoll(signal: AbortSignal | undefined): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, POLL_INTERVAL_MS);
+		if (!signal) return;
+		signal.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(signal.reason);
+			},
+			{ once: true },
+		);
+	});
+}
 
-async function downloadAndExtractMd(zipUrl: string): Promise<string> {
+async function downloadAndExtractMd(
+	zipUrl: string,
+	signal: AbortSignal | undefined,
+): Promise<string> {
 	const tmpDir = mkdtempSync(join(tmpdir(), "pi-mineru-pro-"));
 	const zipPath = join(tmpDir, "result.zip");
 
-	// Download zip — stream to disk to avoid OOM on large files
-	const resp = await fetch(zipUrl, { signal: AbortSignal.timeout(120_000) });
-	if (!resp.ok) throw new Error(`Failed to download zip: ${resp.status}`);
-	if (!resp.body) throw new Error("No response body");
-	await pipeline(
-		Readable.fromWeb(resp.body as any),
-		createWriteStream(zipPath),
-	);
-
-	// Extract
 	try {
-		await extractZip(zipPath, tmpDir);
-	} catch {
-		throw new Error("Failed to extract zip — install unzip or python3");
-	} finally {
-		try {
-			rmSync(zipPath, { force: true });
-		} catch {
-			/* cleanup */
-		}
-	}
+		const resp = await fetch(zipUrl, {
+			signal: requestSignal(signal, 120_000),
+		});
+		if (!resp.ok) throw new Error(`Failed to download zip: ${resp.status}`);
+		if (!resp.body) throw new Error("No response body");
 
-	// Find and read .md file
-	try {
+		await pipeline(
+			Readable.fromWeb(resp.body as any),
+			createWriteStream(zipPath),
+		);
+		await extractZip(zipPath, tmpDir, signal);
+
 		const files = readdirSync(tmpDir, { recursive: true }) as string[];
-		const mdFile = files.find(
-			(f) =>
-				f.endsWith(".md") &&
-				!f.includes("content_list") &&
-				!f.includes("model"),
-		);
-		if (!mdFile) throw new Error("No markdown in extracted zip");
-
-		// Read all .md files that are actual content (not content_list.json.md or model.json.md)
 		const contentFiles = files.filter(
-			(f) =>
-				f.endsWith(".md") &&
-				!f.includes("_content_list") &&
-				!f.includes("_model") &&
-				!f.includes("middle") &&
-				!f.includes("layout"),
+			(file) =>
+				file.endsWith(".md") &&
+				!file.includes("content_list") &&
+				!file.includes("_model") &&
+				!file.includes("middle") &&
+				!file.includes("layout"),
 		);
-		const content = contentFiles
-			.map((f) => {
-				const text = readFileSync(join(tmpDir, f), "utf8");
-				return text;
-			})
-			.join("\n\n");
+		if (contentFiles.length === 0) {
+			throw new Error("No markdown in extracted zip");
+		}
 
-		cleanupDir(tmpDir);
-		return content || readFileSync(join(tmpDir, mdFile), "utf8");
+		return contentFiles
+			.map((file) => readFileSync(join(tmpDir, file), "utf8"))
+			.join("\n\n");
 	} finally {
-		cleanupDir(tmpDir);
+		rmSync(tmpDir, { recursive: true, force: true });
 	}
 }
 
-async function extractZip(zipPath: string, outDir: string): Promise<void> {
-	return new Promise((resolve, reject) => {
-		// Try unzip first
-		execFile("unzip", ["-qo", zipPath, "-d", outDir], (err: Error | null) => {
-			if (!err) return resolve();
-			// Fallback: python3
-			const child = spawn("python3", [
-				"-c",
-				`
-import zipfile, sys
-with zipfile.ZipFile(sys.argv[1]) as z: z.extractall(sys.argv[2])
-`,
-				zipPath,
-				outDir,
-			]);
-			child.on("close", (code) =>
-				code === 0 ? resolve() : reject(new Error("extract failed")),
+async function extractZip(
+	zipPath: string,
+	outDir: string,
+	signal: AbortSignal | undefined,
+): Promise<void> {
+	await new Promise<void>((resolve, reject) => {
+		execFile("unzip", ["-qo", zipPath, "-d", outDir], (unzipError) => {
+			if (!unzipError) {
+				resolve();
+				return;
+			}
+
+			const child = spawn(
+				"python3",
+				[
+					"-c",
+					`\nimport zipfile, sys\nwith zipfile.ZipFile(sys.argv[1]) as z: z.extractall(sys.argv[2])\n`,
+					zipPath,
+					outDir,
+				],
+				{ signal },
 			);
-			child.on("error", () => reject(new Error("no extract tool")));
+			child.on("close", (code) => {
+				if (code === 0) resolve();
+				else reject(new Error(`python3 exited with code ${code}`));
+			});
+			child.on("error", reject);
 		});
 	});
 }
 
-function cleanupDir(dir: string) {
-	try {
-		rmSync(dir, { recursive: true, force: true });
-	} catch {
-		/* best effort — dir may already be gone */
-	}
-}
-
-// ── Public API ───────────────────────────────────────────────────────────────
 async function processLocalFile(
 	token: string,
 	filePath: string,
 	fileName: string,
 	progressPrefix: string,
+	signal: AbortSignal | undefined,
 	onProgress: OcrProgressCallback,
 ): Promise<string> {
-	// Step 1: Get signed upload URL
 	onProgress(`${progressPrefix} requesting upload…`);
 	const { batch_id, file_urls } = await apiPost(
 		token,
 		`${BASE_URL}/file-urls/batch`,
-		{
-			files: [{ name: fileName }],
-			model_version: "vlm",
-		},
+		{ files: [{ name: fileName }], model_version: "vlm" },
+		signal,
 	);
-
 	if (!file_urls?.[0]) throw new Error("No upload URL returned");
 
-	// Step 2: Upload file (no Content-Type header per docs)
 	onProgress(`${progressPrefix} uploading…`);
-	const fileData = readFileSync(filePath);
 	const putResp = await fetch(file_urls[0], {
 		method: "PUT",
-		body: fileData,
-		signal: AbortSignal.timeout(120_000),
+		body: readFileSync(filePath),
+		signal: requestSignal(signal, 120_000),
 	});
-	if (!putResp.ok) throw new Error(`Upload failed: ${putResp.status}`);
+	if (!putResp.ok) {
+		throw new Error(
+			`MinerU Pro upload ${putResp.status}: ${(await putResp.text()).slice(0, 200)}`,
+		);
+	}
 
-	// Upload complete → auto-submitted. Poll batch.
-	return await pollBatch(token, batch_id, 600_000, progressPrefix, onProgress);
+	return pollBatch(token, batch_id, 600_000, progressPrefix, signal, onProgress);
 }
 
 async function pollBatch(
@@ -208,90 +211,80 @@ async function pollBatch(
 	batchId: string,
 	timeoutMs: number,
 	progressPrefix: string,
+	signal: AbortSignal | undefined,
 	onProgress: OcrProgressCallback,
 ): Promise<string> {
 	const start = Date.now();
+	let lastState = "";
+
 	while (Date.now() - start < timeoutMs) {
 		const data = await apiGet(
 			token,
 			`${BASE_URL}/extract-results/batch/${batchId}`,
+			signal,
 		);
-		const results: any[] = data.extract_result || [];
+		const results: any[] = data.extract_result;
 
-		const allDone = results.every(
-			(r: any) => r.state === "done" || r.state === "failed",
-		);
-		if (allDone) {
+		if (results.length > 0 && results.every((result) =>
+			result.state === "done" || result.state === "failed")) {
+			const failed = results.find((result) => result.state === "failed");
+			if (failed) {
+				throw new Error(
+					`MinerU Pro failed: ${failed.err_msg || failed.error || "unknown error"}`,
+				);
+			}
+
 			const markdowns: string[] = [];
-			for (const r of results) {
-				if (r.state === "done" && r.full_zip_url) {
-					onProgress(`${progressPrefix} downloading ${r.file_name}…`);
-					const md = cleanMarkdown(await downloadAndExtractMd(r.full_zip_url));
-					markdowns.push(md);
+			for (const result of results) {
+				if (!result.full_zip_url) {
+					throw new Error(
+						`MinerU Pro completed ${result.file_name || "file"} without full_zip_url`,
+					);
 				}
+				onProgress(`${progressPrefix} downloading ${result.file_name}…`);
+				markdowns.push(
+					cleanMarkdown(await downloadAndExtractMd(result.full_zip_url, signal)),
+				);
 			}
 			return markdowns.join("\n\n");
 		}
 
-		// Show progress
-		const running = results.filter((r: any) => r.state === "running");
-		if (running.length > 0) {
-			const r = running[0];
-			const pct = r.extract_progress
-				? `${r.extract_progress.extracted_pages || "?"}/${r.extract_progress.total_pages || "?"}p`
+		const running = results.find((result) => result.state === "running");
+		const state = running?.state || results[0]?.state || "pending";
+		if (state !== lastState) {
+			lastState = state;
+			const progress = running?.extract_progress;
+			const pages = progress
+				? ` ${progress.extracted_pages || "?"}/${progress.total_pages || "?"}p`
 				: "";
-			onProgress(`${progressPrefix} running ${pct}…`);
-		} else {
-			onProgress(`${progressPrefix} ${results[0]?.state || "pending"}…`);
+			onProgress(`${progressPrefix} ${state}${pages}…`);
 		}
-		await new Promise((r) => setTimeout(r, 5000));
+		await waitForPoll(signal);
 	}
+
 	throw new Error(`MinerU Pro batch ${batchId} timed out`);
 }
 
-// ── Output cleanup ───────────────────────────────────────────────────────────
-
 function cleanMarkdown(md: string): string {
-	// Remove MinerU's embedded image references (any image directory)
 	return md.replace(/!\[.*?\]\([^)]*\)\n*/g, "");
 }
-
-// ── Public API ───────────────────────────────────────────────────────────────
 
 export async function mineruProOcr(
 	filePath: string,
 	token: string,
-	_signal: AbortSignal | undefined,
+	signal: AbortSignal | undefined,
 	onProgress: OcrProgressCallback,
 ): Promise<OcrResult> {
 	const ext = extname(filePath).toLowerCase();
 	const fileName = basename(filePath);
-
-	if (
-		![
-			".pdf",
-			".png",
-			".jpg",
-			".jpeg",
-			".gif",
-			".webp",
-			".bmp",
-			".tiff",
-			".tif",
-			".doc",
-			".docx",
-			".ppt",
-			".pptx",
-			".xls",
-			".xlsx",
-		].includes(ext)
-	) {
-		throw new Error(`MinerU Pro unsupported: ${ext}`);
-	}
+	const supported = [
+		".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif",
+		".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+	];
+	if (!supported.includes(ext)) throw new Error(`MinerU Pro unsupported: ${ext}`);
 
 	const stats = await stat(filePath);
-	if (stats.size > 200 * 1024 * 1024)
-		throw new Error("File exceeds 200MB limit");
+	if (stats.size > 200 * 1024 * 1024) throw new Error("File exceeds 200MB limit");
 
 	onProgress("[1/1] MinerU Pro (vlm)…");
 	const markdown = await processLocalFile(
@@ -299,6 +292,7 @@ export async function mineruProOcr(
 		filePath,
 		fileName,
 		"[1/1]",
+		signal,
 		onProgress,
 	);
 	onProgress("[1/1] done");
