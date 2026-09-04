@@ -251,9 +251,11 @@ const ocrTool = defineTool({
 			let outputFile: string | undefined;
 			let outputMode: "inline" | "file";
 
-			if (tooLarge) {
-				const ext = extname(filePath).toLowerCase() === ".pdf" ? ".md" : ".txt";
-				outputFile = join(tmpdir(), `pi-ocr-${Date.now()}${ext}`);
+			if (result.details.resultMarkdown) {
+				outputFile = result.details.resultMarkdown as string;
+				outputMode = "file";
+			} else if (tooLarge) {
+				outputFile = join(tmpdir(), `pi-ocr-${Date.now()}.md`);
 				writeFileSync(outputFile, result.text, "utf8");
 				outputMode = "file";
 			} else {

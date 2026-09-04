@@ -113,7 +113,7 @@ Open with `/ocr` (no args).
 
 ## Output Behavior
 
-Results ≤2000 chars are returned inline in the tool response. Longer results are written to a temp file (`/tmp/pi-ocr-*.md`); the tool response includes the file path for the AI to read.
+Results ≤2000 chars are returned inline in the tool response. Longer results are written to Markdown files (`/tmp/pi-ocr-*.md`). MinerU Pro additionally preserves the complete result package in a timestamped directory, including images, LaTeX, JSON metadata, and the original Markdown references.
 
 ---
 
