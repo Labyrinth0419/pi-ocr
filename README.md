@@ -30,7 +30,7 @@ Switch anytime with `/ocr` (no args).
 | | Backend | Best for | Setup |
 |---|---|---|---|
 | ☁️ | **MinerU** (default) | PDFs, general docs | None |
-| ☁️ | **MinerU Pro** | Large PDFs, vlm accuracy | API token |
+| ☁️ | **MinerU Pro** | Large PDFs, Office files, vlm accuracy | API token |
 | 🦙 | Ollama | Math formulas → LaTeX | GPU + 2.2GB model |
 | 🔤 | Tesseract | Plain text (~30MB) | `brew install tesseract` |
 | 📐 | Pix2Text | Math + text, GPU/CPU | `pip install pix2text` |
@@ -49,7 +49,7 @@ Free cloud API. Images are wrapped as PDF so language-aware OCR applies.
 
 ## MinerU Pro (vlm model)
 
-Higher accuracy via token-based precision API. **≤200MB, ≤200 pages** — no splitting needed.
+Higher accuracy via token-based precision API. Supports images, PDFs, DOC/DOCX, PPT/PPTX, and XLS/XLSX. **≤200MB, ≤200 pages** — no splitting needed.
 
 Get a free token at [mineru.net/apiManage](https://mineru.net/apiManage), then set it in `/ocr` settings. 1000 pages/day high-priority.
 

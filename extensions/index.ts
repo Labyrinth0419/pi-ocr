@@ -137,7 +137,7 @@ const RECOMMENDED_MODELS = [
 const ocrSchema = Type.Object({
 	path: Type.String({
 		description:
-			"Absolute or relative path to the image or PDF file to OCR. Supported formats: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.",
+			"Absolute or relative path to the file to OCR. Images/PDFs are supported by all backends; MinerU Pro also supports DOC, DOCX, PPT, PPTX, XLS, XLSX.",
 	}),
 });
 
@@ -145,14 +145,14 @@ const ocrTool = defineTool({
 	name: "pi_ocr",
 	label: "Minimodel OCR",
 	description:
-		"Extract text, math formulas (LaTeX), and tables from images or PDFs. " +
+		"Extract text, math formulas (LaTeX), and tables from images or PDFs; MinerU Pro also supports DOC, DOCX, PPT, PPTX, XLS, XLSX. " +
 		"Multi-backend: MinerU (free cloud, ≤10MB, ≤20pp), MinerU Pro (vlm, token), Ollama (local GPU), Pix2Text (local Python), Tesseract (classic). " +
-		"Use this when the user asks about the content of an image or PDF. " +
+		"Use this when the user asks about the content of an image, PDF, or supported Office file. " +
 		"Works with non-vision LLMs like DeepSeek that cannot process images directly. " +
 		"Backend and model are configured by the user via /ocr.",
-	promptSnippet: "Extract text/formulas/tables from images and PDFs",
+	promptSnippet: "Extract text/formulas/tables from images, PDFs, or supported Office files",
 	promptGuidelines: [
-		"When the user asks about the content of an image or PDF, use pi_ocr to extract the text first.",
+		"When the user asks about the content of an image, PDF, or supported Office file, use pi_ocr to extract the text first.",
 		"Only path is needed — the backend and model are managed by the user via /ocr settings.",
 		"The OCR result includes a **Backend:** field telling you which backend processed the request.",
 	],
@@ -163,9 +163,17 @@ const ocrTool = defineTool({
 		const resolvedModel = config.model;
 
 		if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
-		if (!isImage(filePath) && !isPdf(filePath)) {
+		const imageOrPdf = isImage(filePath) || isPdf(filePath);
+		const officeFile = [
+			".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+		].includes(extname(filePath).toLowerCase());
+		const supported = imageOrPdf || (config.backend === "mineru-pro" && officeFile);
+		if (!supported) {
+			const formats = config.backend === "mineru-pro"
+				? "PNG, JPG, GIF, WEBP, BMP, TIFF, PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX"
+				: "PNG, JPG, GIF, WEBP, BMP, TIFF, PDF";
 			throw new Error(
-				`Unsupported file type "${extname(filePath)}". Supported: PNG, JPG, GIF, WEBP, BMP, TIFF, PDF.`,
+				`Unsupported file type "${extname(filePath)}". Supported: ${formats}.`,
 			);
 		}
 
@@ -324,7 +332,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 	// ── /ocr command ─────────────────────────────────────────────────────────
 
 	pi.registerCommand("ocr", {
-		description: "OCR an image or PDF, or configure OCR settings",
+		description: "OCR an image, PDF, or supported Office file, or configure OCR settings",
 		handler: async (args, ctx) => {
 			const trimmed = (args || "").trim();
 
@@ -383,7 +391,7 @@ export default function ocrExtension(pi: ExtensionAPI) {
 				id: "backend",
 				label: "OCR Backend",
 				description:
-					"Ollama=local GPU, MinerU=free cloud API, Pix2Text=local Python",
+					"Ollama=local GPU, MinerU=free cloud API, MinerU Pro=Office-capable cloud API, Pix2Text=local Python",
 				currentValue: config.backend,
 				values: [...BACKENDS],
 			},
