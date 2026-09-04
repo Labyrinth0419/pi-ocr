@@ -103,7 +103,7 @@ Open with `/ocr` (no args).
 
 | Setting | Description |
 |---|---|
-| OCR Backend | Switch between MinerU, Ollama, Pix2Text, Tesseract |
+| OCR Backend | Switch between MinerU, MinerU Pro, Ollama, Pix2Text, Tesseract |
 | MinerU: Split PDF >20 pages | Auto-split large PDFs into free-tier chunks |
 | MinerU Pro Token | API token from mineru.net/apiManage |
 | Ollama Model | Vision model (glm-ocr, minicpm-v, etc.) |
@@ -129,7 +129,7 @@ Results ≤2000 chars are returned inline in the tool response. Longer results a
 
 **MinerU 429** → Wait a minute or switch backend.
 
-**MinerU Pro 401** → Regenerate token at mineru.net/apiManage.
+**MinerU Pro 401** → Regenerate token at mineru.net/apiManage. Other API, upload, polling, or ZIP errors now include the HTTP status and response detail; check the reported error before retrying.
 
 **"Is Ollama running?"** → `ollama serve`
 
