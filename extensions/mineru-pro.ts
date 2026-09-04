@@ -7,17 +7,19 @@
  *   1. POST /api/v4/file-urls/batch → {batch_id, file_urls[]}
  *   2. PUT file to file_urls[0] → auto-submits
  *   3. Poll GET /api/v4/extract-results/batch/{batch_id}
- *   4. Download full_zip_url → extract Markdown
+ *   4. Download full_zip_url → preserve the complete result package
  *
  * Limits: ≤200MB, ≤200 pages, 1000 pages/day high-priority
  */
 
 import {
+	copyFileSync,
 	createWriteStream,
-	mkdtempSync,
+	mkdirSync,
 	readdirSync,
 	readFileSync,
-	rmSync,
+	unlinkSync,
+	writeFileSync,
 } from "node:fs";
 import { execFile, spawn } from "node:child_process";
 import { basename, extname, join } from "node:path";
@@ -104,43 +106,45 @@ function waitForPoll(signal: AbortSignal | undefined): Promise<void> {
 
 async function downloadAndExtractMd(
 	zipUrl: string,
+	outputDir: string,
 	signal: AbortSignal | undefined,
 ): Promise<string> {
-	const tmpDir = mkdtempSync(join(tmpdir(), "pi-mineru-pro-"));
-	const zipPath = join(tmpDir, "result.zip");
+	const zipPath = join(outputDir, "result.zip");
+	const resp = await fetch(zipUrl, {
+		signal: requestSignal(signal, 120_000),
+	});
+	if (!resp.ok) throw new Error(`Failed to download zip: ${resp.status}`);
+	if (!resp.body) throw new Error("No response body");
 
-	try {
-		const resp = await fetch(zipUrl, {
-			signal: requestSignal(signal, 120_000),
-		});
-		if (!resp.ok) throw new Error(`Failed to download zip: ${resp.status}`);
-		if (!resp.body) throw new Error("No response body");
+	await pipeline(
+		Readable.fromWeb(resp.body as any),
+		createWriteStream(zipPath),
+	);
+	await extractZip(zipPath, outputDir, signal);
+	unlinkSync(zipPath);
 
-		await pipeline(
-			Readable.fromWeb(resp.body as any),
-			createWriteStream(zipPath),
-		);
-		await extractZip(zipPath, tmpDir, signal);
+	const files = readdirSync(outputDir, { recursive: true }) as string[];
+	const contentFiles = files.filter(
+		(file) =>
+			file.endsWith(".md") &&
+			!file.includes("content_list") &&
+			!file.includes("_model") &&
+			!file.includes("middle") &&
+			!file.includes("layout") &&
+			file !== "result.md",
+	);
+	if (contentFiles.length === 0) throw new Error("No markdown in extracted zip");
 
-		const files = readdirSync(tmpDir, { recursive: true }) as string[];
-		const contentFiles = files.filter(
-			(file) =>
-				file.endsWith(".md") &&
-				!file.includes("content_list") &&
-				!file.includes("_model") &&
-				!file.includes("middle") &&
-				!file.includes("layout"),
-		);
-		if (contentFiles.length === 0) {
-			throw new Error("No markdown in extracted zip");
-		}
-
-		return contentFiles
-			.map((file) => readFileSync(join(tmpDir, file), "utf8"))
-			.join("\n\n");
-	} finally {
-		rmSync(tmpDir, { recursive: true, force: true });
+	const markdown = contentFiles
+		.map((file) => readFileSync(join(outputDir, file), "utf8"))
+		.join("\n\n");
+	const resultPath = join(outputDir, "result.md");
+	if (contentFiles.length === 1 && join(outputDir, contentFiles[0]) !== resultPath) {
+		copyFileSync(join(outputDir, contentFiles[0]), resultPath);
+	} else {
+		writeFileSync(resultPath, markdown, "utf8");
 	}
+	return markdown;
 }
 
 async function extractZip(
@@ -178,10 +182,11 @@ async function processLocalFile(
 	token: string,
 	filePath: string,
 	fileName: string,
+	outputDir: string,
 	progressPrefix: string,
 	signal: AbortSignal | undefined,
 	onProgress: OcrProgressCallback,
-): Promise<string> {
+): Promise<{ markdown: string; details: Record<string, unknown> }> {
 	onProgress(`${progressPrefix} requesting upload…`);
 	const { batch_id, file_urls } = await apiPost(
 		token,
@@ -203,17 +208,19 @@ async function processLocalFile(
 		);
 	}
 
-	return pollBatch(token, batch_id, 600_000, progressPrefix, signal, onProgress);
+	return pollBatch(token, batch_id, fileName, outputDir, 600_000, progressPrefix, signal, onProgress);
 }
 
 async function pollBatch(
 	token: string,
 	batchId: string,
+	fileName: string,
+	outputDir: string,
 	timeoutMs: number,
 	progressPrefix: string,
 	signal: AbortSignal | undefined,
 	onProgress: OcrProgressCallback,
-): Promise<string> {
+): Promise<{ markdown: string; details: Record<string, unknown> }> {
 	const start = Date.now();
 	let lastState = "";
 
@@ -242,11 +249,20 @@ async function pollBatch(
 					);
 				}
 				onProgress(`${progressPrefix} downloading ${result.file_name}…`);
-				markdowns.push(
-					cleanMarkdown(await downloadAndExtractMd(result.full_zip_url, signal)),
-				);
+				markdowns.push(await downloadAndExtractMd(result.full_zip_url, outputDir, signal));
 			}
-			return markdowns.join("\n\n");
+
+			const markdown = markdowns.join("\n\n");
+			const details = {
+				backend: "mineru-pro",
+				fileName,
+				batchId,
+				extractResult: results,
+				resultDirectory: outputDir,
+				resultMarkdown: join(outputDir, "result.md"),
+			};
+			writeFileSync(join(outputDir, "metadata.json"), JSON.stringify(details, null, 2) + "\n", "utf8");
+			return { markdown, details };
 		}
 
 		const running = results.find((result) => result.state === "running");
@@ -263,10 +279,6 @@ async function pollBatch(
 	}
 
 	throw new Error(`MinerU Pro batch ${batchId} timed out`);
-}
-
-function cleanMarkdown(md: string): string {
-	return md.replace(/!\[.*?\]\([^)]*\)\n*/g, "");
 }
 
 export async function mineruProOcr(
@@ -286,11 +298,14 @@ export async function mineruProOcr(
 	const stats = await stat(filePath);
 	if (stats.size > 200 * 1024 * 1024) throw new Error("File exceeds 200MB limit");
 
+	const outputDir = join(tmpdir(), `pi-ocr-${Date.now()}`);
+	mkdirSync(outputDir, { recursive: true });
 	onProgress("[1/1] MinerU Pro (vlm)…");
-	const markdown = await processLocalFile(
+	const result = await processLocalFile(
 		token,
 		filePath,
 		fileName,
+		outputDir,
 		"[1/1]",
 		signal,
 		onProgress,
@@ -298,7 +313,7 @@ export async function mineruProOcr(
 	onProgress("[1/1] done");
 
 	return {
-		text: cleanMarkdown(markdown),
-		details: { backend: "mineru-pro", fileName },
+		text: result.markdown,
+		details: result.details,
 	};
 }
